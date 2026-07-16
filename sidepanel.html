@@ -1,504 +1,129 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BGG FAQ Generator</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
-:root {
-  --bg: #0d0d14;
-  --surface: #16161f;
-  --surface2: #1e1e2c;
-  --border: #32324a;
-  --accent: #e8c547;
-  --accent2: #9b8ff0;
-  --text: #f0f0f8;
-  --text2: #b8b8d0;
-  --muted: #7878a0;
-  --success: #5ddf8a;
-  --error: #ff7070;
-  --warning: #ffaa44;
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Syne', sans-serif;
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: var(--sans);
-  background: var(--bg);
-  color: var(--text);
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  font-size: 13px;
-}
-
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background-image:
-    linear-gradient(rgba(155,143,240,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(155,143,240,0.04) 1px, transparent 1px);
-  background-size: 32px 32px;
-  pointer-events: none; z-index: 0;
-}
-
-.app { position: relative; z-index: 1; padding: 10px 12px; }
-
-header { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.header-top { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
-.badge { font-size: 8px; font-weight: 700; letter-spacing: 0.15em; padding: 2px 6px; border-radius: 2px; text-transform: uppercase; }
-.badge-yellow { background: var(--accent); color: #000; }
-.badge-purple { background: var(--accent2); color: #fff; }
-h1 { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
-h1 span { color: var(--accent); }
-.subtitle { display: none; }
-
-.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
-.tab {
-  font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
-  padding: 6px 12px; background: transparent; border: none;
-  color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent;
-  transition: all 0.15s; margin-bottom: -1px;
-}
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
-
-.section { margin-bottom: 8px; }
-.section-title {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--text2);
-  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
-}
-.section-title::before {
-  content: ''; display: inline-block; width: 2px; height: 10px;
-  background: var(--accent); border-radius: 1px;
-}
-
-.field { margin-bottom: 4px; }
-label {
-  display: block; font-size: 10px; font-weight: 700;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text2); margin-bottom: 5px;
-}
-
-input, select {
-  width: 100%; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; color: var(--text); font-family: var(--mono);
-  font-size: 11px; padding: 6px 10px; outline: none; transition: border-color 0.15s;
-}
-input:focus, select:focus { border-color: var(--accent2); }
-input::placeholder { color: var(--muted); }
-select option { background: var(--surface2); }
-
-.input-row { display: flex; gap: 6px; }
-.input-row input { flex: 1; }
-
-.token-wrap { position: relative; }
-.token-wrap input { padding-right: 44px; }
-.vis-toggle {
-  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-  font-family: var(--mono); font-size: 9px; color: var(--text2);
-  cursor: pointer; user-select: none;
-}
-.vis-toggle:hover { color: var(--accent); }
-
-.btn {
-  font-family: var(--sans); font-size: 11px; font-weight: 700;
-  letter-spacing: 0.05em; padding: 6px 12px; border-radius: 4px;
-  border: none; cursor: pointer; transition: all 0.15s; white-space: nowrap;
-}
-.btn-primary { background: var(--accent); color: #000; }
-.btn-primary:hover { background: #f2d055; }
-.btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
-
-.btn-purple { background: var(--accent2); color: #fff; }
-.btn-purple:hover { background: #b0a4f5; }
-.btn-purple:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
-
-.btn-ghost {
-  background: transparent; color: var(--text2); border: 1px solid var(--border);
-}
-.btn-ghost:hover { border-color: var(--accent2); color: var(--text); }
-.btn-ghost:disabled { color: var(--muted); border-color: var(--border); cursor: not-allowed; }
-.btn-sm { padding: 5px 10px; font-size: 10px; }
-
-.btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-
-/* Search results */
-.results-list { margin-top: 8px; max-height: 200px; overflow-y: auto; }
-
-.result-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 8px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 6px; margin-bottom: 5px; cursor: pointer;
-  transition: border-color 0.15s;
-}
-.result-item:hover { border-color: var(--accent); }
-.result-item.selected { border-color: var(--accent); background: rgba(232,197,71,0.07); }
-
-.result-thumb {
-  width: 40px; height: 40px; border-radius: 4px;
-  object-fit: cover; background: var(--border); flex-shrink: 0;
-}
-.result-thumb-placeholder {
-  width: 40px; height: 40px; border-radius: 4px;
-  background: var(--border); flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
-}
-.result-info { flex: 1; min-width: 0; }
-.result-name { font-weight: 700; font-size: 11px; color: var(--text); line-height: 1.2; margin-bottom: 1px; }
-.result-meta { font-family: var(--mono); font-size: 10px; color: var(--text2); }
-.result-id { font-family: var(--mono); font-size: 9px; color: var(--muted); margin-top: 1px; }
-
-/* Forum grid */
-.forum-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
-.forum-item {
-  padding: 6px 10px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; cursor: pointer; transition: all 0.15s;
-}
-.forum-item:hover { border-color: var(--accent2); }
-.forum-item.selected { border-color: var(--accent); background: rgba(232,197,71,0.07); }
-.forum-item-name { font-size: 11px; font-weight: 700; color: var(--text); }
-.forum-item-count { font-family: var(--mono); font-size: 10px; color: var(--text2); margin-top: 0px; }
-
-/* Mode toggle */
-.mode-toggle { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
-.mode-btn {
-  flex: 1; font-family: var(--sans); font-size: 11px; font-weight: 700;
-  letter-spacing: 0.04em; padding: 5px; background: transparent;
-  color: var(--text2); border: none; cursor: pointer; transition: all 0.15s;
-}
-.mode-btn:hover { color: var(--text); }
-.mode-btn.active { background: var(--accent); color: #000; }
-
-/* Progress */
-.progress-wrap { margin-top: 8px; }
-.progress-bg { height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
-.progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; width: 0%; }
-.progress-text { font-family: var(--mono); font-size: 10px; color: var(--text2); }
-
-/* Log */
-.log {
-  margin-top: 8px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; padding: 8px; font-family: var(--mono); font-size: 10px;
-  color: var(--text2); max-height: 120px; overflow-y: auto;
-}
-.log-line { margin-bottom: 2px; line-height: 1.5; }
-.log-ok   { color: var(--success); }
-.log-err  { color: var(--error); }
-.log-warn { color: var(--warning); }
-.log-info { color: var(--accent); }
-
-/* FAQ preview */
-.faq-preview {
-  margin-top: 10px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; padding: 10px; font-family: var(--mono); font-size: 10px;
-  line-height: 1.6; max-height: 220px; overflow-y: auto;
-  white-space: pre-wrap; color: var(--text);
-}
-
-/* Saved games */
-.saved-item {
-  padding: 9px 10px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; margin-bottom: 6px;
-}
-.saved-item-name { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
-.saved-item-meta { font-family: var(--mono); font-size: 10px; color: var(--text2); }
-.saved-item-actions { display: flex; gap: 4px; margin-top: 6px; }
-
-.btn-micro {
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  padding: 3px 8px; border-radius: 3px; border: 1px solid var(--border);
-  background: transparent; color: var(--text2); cursor: pointer; transition: all 0.15s;
-}
-.btn-micro:hover { border-color: var(--accent); color: var(--accent); }
-.btn-micro.red:hover { border-color: var(--error); color: var(--error); }
-
-/* Chips */
-.chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
-.chip {
-  font-family: var(--mono); font-size: 10px; padding: 3px 8px;
-  border-radius: 3px; border: 1px solid var(--border); color: var(--text2);
-}
-.chip.on  { border-color: var(--success); color: var(--success); }
-.chip.off { border-color: var(--error); color: var(--error); }
-
-/* Done banner */
-.done-banner {
-  margin-top: 12px;
-  background: rgba(93,223,138,0.08);
-  border: 1px solid rgba(93,223,138,0.4);
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-.done-header {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
-}
-.done-icon {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: var(--success); color: #000;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 800; flex-shrink: 0;
-}
-.done-title {
-  font-size: 13px; font-weight: 800; color: var(--success);
-  letter-spacing: 0.02em;
-}
-.done-text {
-  font-family: var(--mono); font-size: 10px; color: var(--text2);
-  margin-bottom: 12px; line-height: 1.6;
-}
-.done-actions {
-  display: flex; gap: 6px; flex-wrap: wrap;
-}
-.done-actions .btn-primary {
-  background: var(--success); color: #000;
-}
-.done-actions .btn-primary:hover { background: #7aeaa0; }
-
-.divider { height: 1px; background: var(--border); margin: 14px 0; }
-.hidden { display: none !important; }
-.mt8 { margin-top: 8px; }
-
-
-/* Forum selection states */
-.forum-grid.has-selection .forum-item:not(.selected) {
-  opacity: 0.35;
-  filter: grayscale(0.3);
-}
-.forum-item.selected {
-  border-color: var(--accent) !important;
-  background: rgba(232,197,71,0.12) !important;
-  opacity: 1 !important;
-}
-.forum-item.selected .forum-item-name {
-  color: var(--accent);
-}
-.forum-item.selected .forum-item-count {
-  color: var(--text2);
-}
-
-/* Game selection state */
-.result-item.selected .result-name { color: var(--accent); }
-.result-item:not(.selected) { opacity: 0.6; }
-.result-item.selected { opacity: 1 !important; }
-.results-list:not(.has-selection) .result-item { opacity: 1; }
-
-/* Confirm modal */
-.modal-overlay {
-  position: fixed; inset: 0; z-index: 9999;
-  background: rgba(0,0,0,0.7);
-  display: flex; align-items: center; justify-content: center;
-  padding: 16px;
-}
-.modal {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px;
-  width: 100%;
-  max-width: 340px;
-}
-.modal-title {
-  font-size: 13px; font-weight: 800;
-  letter-spacing: 0.02em; margin-bottom: 12px;
-  display: flex; align-items: center; gap: 8px;
-}
-.modal-icon { font-size: 16px; }
-.modal-body {
-  font-family: var(--mono); font-size: 10px;
-  color: var(--text2); line-height: 1.7;
-  margin-bottom: 16px;
-}
-.modal-body strong { color: var(--text); }
-.modal-stat {
-  display: flex; justify-content: space-between;
-  padding: 5px 0; border-bottom: 1px solid var(--border);
-}
-.modal-stat:last-child { border-bottom: none; }
-.modal-stat-label { color: var(--muted); }
-.modal-stat-value { color: var(--text); font-weight: 600; }
-.modal-stat-value.accent { color: var(--accent); }
-.modal-stat-value.warn { color: var(--warning); }
-.modal-actions {
-  display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
-}
-
-
-/* Upload button */
-.upload-btn {
-  display: inline-block; cursor: pointer;
-  font-family: var(--sans); font-size: 11px; font-weight: 700;
-  letter-spacing: 0.04em; padding: 7px 14px; border-radius: 4px;
-  border: 1px dashed var(--border); color: var(--text2);
-  transition: all 0.15s; width: 100%; text-align: center;
-  box-sizing: border-box;
-}
-.upload-btn:hover { border-color: var(--accent2); color: var(--text); }
-
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BGG FAQ Generator</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="app">
-
-  <header>
-    <div class="header-top">
-      <span class="badge badge-yellow">BGG</span>
-      <span class="badge badge-purple">FAQ</span>
-    </div>
-    <h1>Forum <span>FAQ</span></h1>
-    <div class="subtitle">// scrape → analyse → generate</div>
+  <header class="app-header">
+    <div><span class="eyebrow">BOARDGAMEGEEK TOOL</span><h1>FAQ Generator <span>v2</span></h1></div>
+    <span id="global-status" class="status neutral">Ready</span>
   </header>
 
-  <div class="tabs">
+  <nav class="tabs" aria-label="Sections">
     <button class="tab active" data-tab="scrape">Scrape</button>
     <button class="tab" data-tab="faq">FAQ</button>
-    <button class="tab" data-tab="saved">Saved</button>
-    <button class="tab" data-tab="config">Config</button>
-  </div>
+    <button class="tab" data-tab="library">Library</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
 
-  <!-- ── SCRAPE TAB ─────────────────────────────────────── -->
-  <div class="tab-panel active" id="tab-scrape">
-
-    <div class="section">
-      <div class="section-title">1 — Find Game</div>
-      <div class="input-row">
-        <input type="text" id="search-q" placeholder="Game name..." style="flex:3;" />
-        <input type="number" id="search-year" placeholder="Year" style="flex:1;min-width:64px;" min="1900" max="2099" />
-        <button class="btn btn-primary" id="btn-search">Go</button>
-      </div>
-      <div class="results-list hidden" id="search-results"></div>
-    </div>
-
-    <div class="section hidden" id="forum-section">
-      <div class="section-title">2 — Select Forum</div>
-      <div class="forum-grid" id="forum-grid"></div>
-    </div>
-
-    <div class="section hidden" id="scrape-section">
-      <div class="section-title">3 — Scrape</div>
-      <div class="mode-toggle">
-        <button class="mode-btn active" id="mode-full" data-mode="full">Full Scrape</button>
-        <button class="mode-btn" id="mode-update" data-mode="update">Update (Delta)</button>
-      </div>
-      <div id="update-info" class="hidden" style="font-size:10px;color:var(--text2);margin-bottom:4px;"></div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btn-scrape">Scrape Threads</button>
-        <button class="btn btn-ghost btn-sm" id="btn-dl-txt" disabled>↓ .txt</button>
-        <button class="btn btn-ghost btn-sm" id="btn-dl-json" disabled>↓ .json</button>
-      </div>
-      <div class="progress-wrap hidden" id="progress-wrap">
-        <div class="progress-bg"><div class="progress-fill" id="progress-fill"></div></div>
-        <div class="progress-text" id="progress-text"></div>
-      </div>
-      <div class="log hidden" id="log"></div>
-
-      <!-- Completion banner -->
-      <div class="done-banner hidden" id="done-banner">
-        <div class="done-header">
-          <span class="done-icon">✓</span>
-          <span class="done-title">Scrape Complete!</span>
+  <main>
+    <section id="tab-scrape" class="panel active">
+      <div class="card">
+        <h2>1. Find a game</h2>
+        <div class="grid two">
+          <label>Game name<input id="search-query" type="search" placeholder="Search BoardGameGeek"></label>
+          <label>Year (optional)<input id="search-year" inputmode="numeric" placeholder="2024"></label>
         </div>
-        <div class="done-text" id="done-text"></div>
-        <div class="done-actions">
-          <button class="btn btn-ghost btn-sm" id="done-dl-txt">↓ Download .txt</button>
-          <button class="btn btn-ghost btn-sm" id="done-dl-json">↓ Download .json</button>
-          <button class="btn btn-primary" id="done-go-faq">Generate FAQ →</button>
+        <button id="search-button" class="primary">Search</button>
+        <div id="search-results" class="result-list" aria-live="polite"></div>
+      </div>
+
+      <div id="forum-card" class="card hidden">
+        <h2>2. Choose a forum</h2>
+        <div id="forum-results" class="result-list"></div>
+      </div>
+
+      <div id="options-card" class="card hidden">
+        <h2>3. Configure scrape</h2>
+        <div class="grid two">
+          <label>Mode<select id="scrape-mode"><option value="full">Full scrape</option><option value="update">Update saved scrape</option></select></label>
+          <label>Maximum threads<input id="max-threads" type="number" min="1" max="5000" placeholder="No limit"></label>
+          <label>Posted since<input id="date-from" type="date"></label>
+          <label>Subject contains<input id="subject-filter" type="search" placeholder="scoring, setup…"></label>
         </div>
+        <div class="check-row">
+          <label><input id="answered-only" type="checkbox"> Exclude threads with no replies</label>
+          <label><input id="designer-only" type="checkbox"> Keep posts by selected authors only</label>
+        </div>
+        <label id="authors-wrap" class="hidden">Authors, comma-separated<input id="author-filter" placeholder="designer_username, publisher"></label>
+        <div id="scrape-estimate" class="notice neutral">Load the forum to calculate an estimate.</div>
+        <div class="button-row">
+          <button id="prepare-button" class="secondary">Preview scrape</button>
+          <button id="scrape-button" class="primary" disabled>Start scrape</button>
+          <button id="cancel-scrape" class="danger hidden">Cancel</button>
+        </div>
+        <div id="scrape-progress" class="progress hidden"><div></div></div>
+        <pre id="scrape-log" class="log hidden" aria-live="polite"></pre>
       </div>
-    </div>
+    </section>
 
-  </div>
-
-  <!-- ── FAQ TAB ────────────────────────────────────────── -->
-  <div class="tab-panel" id="tab-faq">
-
-    <div class="section">
-      <div class="section-title">Update from existing FAQ</div>
-      <div style="font-size:10px;color:var(--text2);margin-bottom:6px;">
-        Upload a previously generated .md file to update it with new threads.
-      </div>
-      <label class="upload-btn" id="faq-upload-label">
-        <input type="file" id="faq-upload-input" accept=".md" style="display:none;" />
-        ↑ Upload existing FAQ (.md)
-      </label>
-      <div id="faq-upload-status" class="hidden" style="font-family:var(--mono);font-size:10px;margin-top:6px;white-space:pre-line;"></div>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="section">
-      <div class="section-title">Generate FAQ</div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:10px;" id="faq-source-info">
-        No scrape data loaded. Run a scrape first.
-      </div>
-      <div class="field">
-        <label>Extra Instructions (optional)</label>
-        <input type="text" id="faq-instructions" placeholder="e.g. Focus on end-game scoring rules" />
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-purple" id="btn-gen-faq">Generate FAQ</button>
-        <button class="btn btn-ghost btn-sm" id="btn-dl-faq" disabled>↓ .md</button>
-      </div>
-      <div class="progress-wrap hidden" id="faq-progress-wrap">
-        <div class="progress-bg"><div class="progress-fill" id="faq-progress-fill"></div></div>
-        <div class="progress-text" id="faq-progress-text"></div>
-      </div>
-      <div class="faq-preview hidden" id="faq-preview"></div>
-    </div>
-  </div>
-
-  <!-- ── SAVED TAB ──────────────────────────────────────── -->
-  <div class="tab-panel" id="tab-saved">
-    <div class="section">
-      <div class="section-title">Saved Games</div>
-      <div id="saved-list"><div style="color:var(--muted);font-size:11px;">No saved games yet.</div></div>
-    </div>
-  </div>
-
-  <!-- ── CONFIG TAB ─────────────────────────────────────── -->
-  <div class="tab-panel" id="tab-config">
-    <div class="section">
-      <div class="section-title">API Keys</div>
-      <div class="field">
-        <label>BGG Bearer Token</label>
-        <div class="token-wrap">
-          <input type="password" id="bgg-token" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
-          <span class="vis-toggle" id="vis-bgg">SHOW</span>
+    <section id="tab-faq" class="panel">
+      <div class="card">
+        <h2>Source dataset</h2>
+        <div id="faq-source" class="notice neutral">Choose a dataset from the Library or finish a scrape.</div>
+        <label>Generation focus (optional)<input id="faq-focus" placeholder="Focus on end-game scoring"></label>
+        <div class="grid two">
+          <label>Model<select id="model-select"><option value="claude-sonnet-4-20250514">Claude Sonnet 4</option><option value="custom">Custom model ID</option></select></label>
+          <label id="custom-model-wrap" class="hidden">Custom model ID<input id="custom-model" placeholder="claude-…"></label>
+        </div>
+        <div id="cost-estimate" class="notice neutral">Select a dataset to estimate request size.</div>
+        <label class="consent"><input id="ai-consent" type="checkbox"> I understand that forum content will be sent to Anthropic for inference, may incur charges, and must be used consistently with BGG’s terms.</label>
+        <div class="button-row">
+          <button id="generate-button" class="primary" disabled>Generate source-linked FAQ</button>
+          <button id="cancel-faq" class="danger hidden">Cancel</button>
+        </div>
+        <div id="faq-progress" class="progress hidden"><div></div></div>
+        <pre id="faq-output" class="faq-output hidden"></pre>
+        <div id="faq-downloads" class="button-row hidden">
+          <button id="download-md" class="secondary">Markdown</button>
+          <button id="download-html" class="secondary">HTML / Print to PDF</button>
         </div>
       </div>
-      <div class="field">
-        <label>Anthropic API Key</label>
-        <div class="token-wrap">
-          <input type="password" id="claude-key" placeholder="sk-ant-..." />
-          <span class="vis-toggle" id="vis-claude">SHOW</span>
+      <div class="card">
+        <h2>Import an earlier v2 FAQ</h2>
+        <p class="muted">A v2 Markdown export embeds metadata needed to reopen its dataset.</p>
+        <label class="file-button">Choose Markdown<input id="faq-import" type="file" accept=".md,text/markdown"></label>
+      </div>
+    </section>
+
+    <section id="tab-library" class="panel">
+      <div class="card">
+        <div class="heading-row"><h2>Scrape library</h2><button id="refresh-library" class="ghost">Refresh</button></div>
+        <div id="library-list" class="library-list"></div>
+        <div class="button-row">
+          <button id="export-library" class="secondary">Back up all data</button>
+          <label class="file-button">Restore backup<input id="import-library" type="file" accept=".json,application/json"></label>
         </div>
       </div>
-      <button class="btn btn-primary" id="btn-save-config">Save</button>
-      <div class="chips" id="config-chips"></div>
-    </div>
-    <div class="divider"></div>
-    <div class="section">
-      <div class="section-title">About</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--text2);line-height:1.8;">
-        v1.2 — BGG FAQ Generator<br>
-        BGG XML API v2 + Claude Sonnet<br>
-        600ms rate limit between requests
-      </div>
-    </div>
-  </div>
+    </section>
 
-</div>
-<script src="sidepanel.js"></script>
+    <section id="tab-settings" class="panel">
+      <div class="card">
+        <h2>Credentials</h2>
+        <label>BGG application token<input id="bgg-token" type="password" autocomplete="off" placeholder="Bearer token"></label>
+        <label>Anthropic API key<input id="anthropic-key" type="password" autocomplete="off" placeholder="sk-ant-…"></label>
+        <label><input id="remember-credentials" type="checkbox"> Remember credentials after Chrome restarts</label>
+        <div class="button-row"><button id="save-settings" class="primary">Save</button><button id="clear-settings" class="danger">Clear credentials</button></div>
+        <p class="muted">Session-only credentials are cleared when the extension reloads, is disabled, updated, or Chrome restarts. Remembered credentials are stored in the local Chrome profile.</p>
+      </div>
+      <div class="card">
+        <h2>Data and compliance</h2>
+        <p>This tool is intended for non-commercial use. BGG forum content is sent to Anthropic only when you explicitly generate a FAQ. Generated answers must be verified against official rules and linked sources.</p>
+        <a class="bgg-credit" href="https://boardgamegeek.com" target="_blank" rel="noreferrer">Powered by <strong>BoardGameGeek</strong></a>
+        <p><a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" rel="noreferrer">BGG XML API Terms</a> · <a href="https://docs.anthropic.com/en/api/messages" target="_blank" rel="noreferrer">Anthropic Messages API</a></p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog">
+    <h2>Confirm scrape</h2><div id="confirm-details"></div>
+    <div class="button-row"><button id="confirm-cancel" class="ghost">Cancel</button><button id="confirm-start" class="primary">Continue</button></div>
+  </dialog>
+  <div id="toast" class="toast hidden" role="status"></div>
+  <footer><a class="bgg-credit" href="https://boardgamegeek.com" target="_blank" rel="noreferrer">Powered by <strong>BoardGameGeek</strong></a></footer>
+  <script type="module" src="src/app.js"></script>
 </body>
 </html>
