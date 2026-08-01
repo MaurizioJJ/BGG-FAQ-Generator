@@ -1,0 +1,11 @@
+{
+  "name": "bgg-faq-generator",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "exportedAt": "2026-01-01T12:00:00.000Z",
+  "datasets": [
+    {
+      "id": "demo-starlight-rules",
+      "schemaVersion": 2,
+      "game": { "id": "demo-101", "name": "Starlight Couriers", "year": "2026" },
+      "forum": { "id": "demo-forum-101", "title": "Rules", "numThreads": 1 },
+      "updatedAt": "2026-01-01T10:00:00.000Z",
+      "scrape": { "status": "complete", "completedAt": "2026-01-01T10:00:00.000Z", "filters": {}, "pendingIds": [] },
+      "threads": [{
+        "id": "demo-thread-101",
+        "subject": "Delivering two parcels in one turn",
+        "url": "https://example.invalid/starlight/thread/101",
+        "posts": [
+          { "id": "demo-post-101a", "author": "RulesGuide", "date": "2026-01-01", "body": "A courier may deliver both parcels when both destination symbols match the current station.", "url": "https://example.invalid/starlight/thread/101#post-a" },
+          { "id": "demo-post-101b", "author": "ExamplePlayer", "date": "2026-01-01", "body": "The movement cost is paid once before resolving either delivery.", "url": "https://example.invalid/starlight/thread/101#post-b" }
+        ]
+      }],
+      "faq": { "text": "## Deliveries\n\n**Q:** Can two parcels be delivered in one turn?\n\n**A:** Yes, when both symbols match the station. Pay movement once, then resolve both parcels. [Example source](https://example.invalid/starlight/thread/101#post-a)", "model": "fictional-demo", "generatedAt": "2026-01-01T10:05:00.000Z" }
+    },
+    {
+      "id": "demo-orchard-rules",
+      "schemaVersion": 2,
+      "game": { "id": "demo-202", "name": "Clockwork Orchard", "year": "2026" },
+      "forum": { "id": "demo-forum-202", "title": "Rules", "numThreads": 1 },
+      "updatedAt": "2026-01-01T11:00:00.000Z",
+      "scrape": { "status": "complete", "completedAt": "2026-01-01T11:00:00.000Z", "filters": {}, "pendingIds": [] },
+      "threads": [{
+        "id": "demo-thread-202",
+        "subject": "Watering after harvesting",
+        "url": "https://example.invalid/orchard/thread/202",
+        "posts": [
+          { "id": "demo-post-202a", "author": "DemoDesigner", "date": "2026-01-01", "body": "Harvesting ends that worker's action, so watering must be performed by another worker.", "url": "https://example.invalid/orchard/thread/202#post-a" }
+        ]
+      }],
+      "faq": { "text": "## Worker actions\n\n**Q:** Can the same worker water after harvesting?\n\n**A:** No. Harvesting ends that worker's action. [Example source](https://example.invalid/orchard/thread/202#post-a)", "model": "fictional-demo", "generatedAt": "2026-01-01T11:05:00.000Z" }
+    },
+    {
+      "id": "demo-tides-rules",
+      "schemaVersion": 2,
+      "game": { "id": "demo-303", "name": "Islands of the Quiet Tide", "year": "2026" },
+      "forum": { "id": "demo-forum-303", "title": "Rules", "numThreads": 1 },
+      "updatedAt": "2026-01-01T12:00:00.000Z",
+      "scrape": { "status": "complete", "completedAt": "2026-01-01T12:00:00.000Z", "filters": {}, "pendingIds": [] },
+      "threads": [{
+        "id": "demo-thread-303",
+        "subject": "Shared lighthouse scoring",
+        "url": "https://example.invalid/tides/thread/303",
+        "posts": [
+          { "id": "demo-post-303a", "author": "IslandKeeper", "date": "2026-01-01", "body": "Each tied player receives the full lighthouse value; the points are not divided.", "url": "https://example.invalid/tides/thread/303#post-a" }
+        ]
+      }],
+      "faq": { "text": "## Scoring\n\n**Q:** Are shared lighthouse points divided?\n\n**A:** No. Every tied player receives the full value. [Example source](https://example.invalid/tides/thread/303#post-a)", "model": "fictional-demo", "generatedAt": "2026-01-01T12:05:00.000Z" }
+    }
+  ]
+}

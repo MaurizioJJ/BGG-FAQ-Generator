@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BGG FAQ Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div><span class="eyebrow">BOARDGAMEGEEK TOOL</span><h1>FAQ Generator <span>v2</span></h1></div>
+    <span id="global-status" class="status neutral">Ready</span>
+  </header>
+
+  <nav class="tabs" aria-label="Sections">
+    <button class="tab active" data-tab="scrape">Scrape</button>
+    <button class="tab" data-tab="faq">FAQ</button>
+    <button class="tab" data-tab="library">Library</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <main>
+    <section id="tab-scrape" class="panel active">
+      <div class="card">
+        <h2>1. Find a game</h2>
+        <div class="grid two">
+          <label>Game name<input id="search-query" type="search" placeholder="Search BoardGameGeek"></label>
+          <label>Year (optional)<input id="search-year" inputmode="numeric" placeholder="2024"></label>
+        </div>
+        <button id="search-button" class="primary">Search</button>
+        <div id="search-results" class="result-list" aria-live="polite"></div>
+      </div>
+
+      <div id="forum-card" class="card hidden">
+        <h2>2. Choose a forum</h2>
+        <div id="forum-results" class="result-list"></div>
+      </div>
+
+      <div id="options-card" class="card hidden">
+        <h2>3. Configure scrape</h2>
+        <div class="grid two">
+          <label>Mode<select id="scrape-mode"><option value="full">Full scrape</option><option value="update">Update saved scrape</option></select></label>
+          <label>Maximum threads<input id="max-threads" type="number" min="1" max="5000" placeholder="No limit"></label>
+          <label>Posted since<input id="date-from" type="date"></label>
+          <label>Subject contains<input id="subject-filter" type="search" placeholder="scoring, setup…"></label>
+        </div>
+        <div class="check-row">
+          <label><input id="answered-only" type="checkbox"> Exclude threads with no replies</label>
+          <label><input id="designer-only" type="checkbox"> Keep posts by selected authors only</label>
+        </div>
+        <label id="authors-wrap" class="hidden">Authors, comma-separated<input id="author-filter" placeholder="designer_username, publisher"></label>
+        <div id="scrape-estimate" class="notice neutral">Load the forum to calculate an estimate.</div>
+        <div class="button-row">
+          <button id="prepare-button" class="secondary">Preview scrape</button>
+          <button id="scrape-button" class="primary" disabled>Start scrape</button>
+          <button id="cancel-scrape" class="danger hidden">Cancel</button>
+        </div>
+        <div id="scrape-progress" class="progress hidden"><div></div></div>
+        <pre id="scrape-log" class="log hidden" aria-live="polite"></pre>
+      </div>
+    </section>
+
+    <section id="tab-faq" class="panel">
+      <div class="card">
+        <h2>Source dataset</h2>
+        <div id="faq-source" class="notice neutral">Choose a dataset from the Library or finish a scrape.</div>
+        <label>Generation focus (optional)<input id="faq-focus" placeholder="Focus on end-game scoring"></label>
+        <div class="grid two">
+          <label>Model<select id="model-select"><option value="claude-sonnet-4-20250514">Claude Sonnet 4</option><option value="custom">Custom model ID</option></select></label>
+          <label id="custom-model-wrap" class="hidden">Custom model ID<input id="custom-model" placeholder="claude-…"></label>
+        </div>
+        <div id="cost-estimate" class="notice neutral">Select a dataset to estimate request size.</div>
+        <label class="consent"><input id="ai-consent" type="checkbox"> I understand that forum content will be sent to Anthropic for inference, may incur charges, and must be used consistently with BGG’s terms.</label>
+        <div class="button-row">
+          <button id="generate-button" class="primary" disabled>Generate source-linked FAQ</button>
+          <button id="cancel-faq" class="danger hidden">Cancel</button>
+        </div>
+        <div id="faq-progress" class="progress hidden"><div></div></div>
+        <pre id="faq-output" class="faq-output hidden"></pre>
+        <div id="faq-downloads" class="button-row hidden">
+          <button id="download-md" class="secondary">Markdown</button>
+          <button id="download-html" class="secondary">HTML / Print to PDF</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Import an earlier v2 FAQ</h2>
+        <p class="muted">A v2 Markdown export embeds metadata needed to reopen its dataset.</p>
+        <label class="file-button">Choose Markdown<input id="faq-import" type="file" accept=".md,text/markdown"></label>
+      </div>
+    </section>
+
+    <section id="tab-library" class="panel">
+      <div class="card">
+        <div class="heading-row"><h2>Scrape library</h2><button id="refresh-library" class="ghost">Refresh</button></div>
+        <div id="library-list" class="library-list"></div>
+        <div class="button-row">
+          <button id="export-library" class="secondary">Back up all data</button>
+          <label class="file-button">Restore backup<input id="import-library" type="file" accept=".json,application/json"></label>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="panel">
+      <div class="card">
+        <h2>Credentials</h2>
+        <label>BGG application token<input id="bgg-token" type="password" autocomplete="off" placeholder="Bearer token"></label>
+        <label>Anthropic API key<input id="anthropic-key" type="password" autocomplete="off" placeholder="sk-ant-…"></label>
+        <label><input id="remember-credentials" type="checkbox"> Remember credentials after Chrome restarts</label>
+        <div class="button-row"><button id="save-settings" class="primary">Save</button><button id="clear-settings" class="danger">Clear credentials</button></div>
+        <p class="muted">Session-only credentials are cleared when the extension reloads, is disabled, updated, or Chrome restarts. Remembered credentials are stored in the local Chrome profile.</p>
+      </div>
+      <div class="card">
+        <h2>Data and compliance</h2>
+        <p>This tool is intended for non-commercial use. BGG forum content is sent to Anthropic only when you explicitly generate a FAQ. Generated answers must be verified against official rules and linked sources.</p>
+        <a class="bgg-credit" href="https://boardgamegeek.com" target="_blank" rel="noreferrer">Powered by <strong>BoardGameGeek</strong></a>
+        <p><a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" rel="noreferrer">BGG XML API Terms</a> · <a href="https://docs.anthropic.com/en/api/messages" target="_blank" rel="noreferrer">Anthropic Messages API</a></p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog">
+    <h2>Confirm scrape</h2><div id="confirm-details"></div>
+    <div class="button-row"><button id="confirm-cancel" class="ghost">Cancel</button><button id="confirm-start" class="primary">Continue</button></div>
+  </dialog>
+  <div id="toast" class="toast hidden" role="status"></div>
+  <footer><a class="bgg-credit" href="https://boardgamegeek.com" target="_blank" rel="noreferrer">Powered by <strong>BoardGameGeek</strong></a></footer>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
