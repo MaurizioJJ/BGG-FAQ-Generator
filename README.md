@@ -8,12 +8,13 @@ BGG FAQ Generator is an independent, non-commercial utility. It is not affiliate
 
 - Search games and browse forums through the BGG XML API v2.
 - Preview and filter a scrape by date, subject, reply count, author, and maximum size.
-- Run full or incremental scrapes with cancellation and per-thread checkpoints.
+- Run full or incremental scrapes with cancellation, per-thread checkpoints, and a pinned progress summary with an optional detail log.
 - Keep complete reusable datasets in a local scrape library.
 - Generate FAQs that retain BGG thread/post links and distinguish conflicts or unresolved answers.
-- Estimate model requests, token volume, and a conservative Sonnet cost ceiling before generation.
+- Estimate model requests, token volume, and per-model cost before generation, and see the actual cost afterwards.
+- Resume an interrupted FAQ generation from the parts already paid for.
 - Export thread data as text or JSON and FAQs as Markdown or printable HTML.
-- Re-import v2 Markdown FAQs with their complete embedded source dataset.
+- Reopen an exported Markdown FAQ, which carries its own source dataset inside the file.
 - Back up and restore the entire local library.
 - Keep credentials session-only by default or explicitly remember them in the Chrome profile.
 
@@ -45,18 +46,27 @@ After pulling a newer revision, select **Reload** on the extension card.
 
 ### Scrape
 
-1. Search for a game and select a forum.
+1. Search for a game and select a forum. Each completed step collapses to a
+   summary line so the next one stays in view; **Change** reopens it.
 2. Choose full or update mode and apply optional filters.
 3. Preview the request count and duration.
-4. Confirm the scrape. Progress is saved after each thread, so an interrupted dataset remains usable and update mode can fetch missing threads later.
+4. Confirm the scrape. A pinned summary shows the thread counter, the thread being fetched, and the estimated time remaining; **Scrape details** expands the per-thread log.
+5. Progress is saved after each thread, so an interrupted dataset remains usable. When the scrape ends, a result panel reports what was stored and offers **Generate FAQ**, **Open Library**, and **Retry missing threads**.
 
 ### Generate an FAQ
 
 1. Finish a scrape or select a dataset from **Library**.
-2. Review the estimated request size and optional cost ceiling.
+2. Choose a model and review the estimated request count and cost.
 3. Add optional focus instructions.
 4. Confirm the data-transfer notice and generate.
 5. Verify the result against its linked BGG sources and the official rulebook.
+
+Each extraction request is saved to the dataset as it completes. If generation is
+cancelled, times out, or fails part-way, the finished parts are kept and the FAQ
+tab offers **Resume generation**, which continues from the next unprocessed group
+instead of paying for the completed ones again. **Discard saved parts** starts
+over. After a successful run the panel reports the model, the timestamp, and the
+actual cost derived from the reported token usage.
 
 The generator instructs Claude to preserve disagreements, distinguish unresolved/community answers, and cite the supplied thread/post URLs. Generated output can still be wrong.
 
@@ -64,7 +74,7 @@ The generator instructs Claude to preserve disagreements, distinguish unresolved
 
 Use **Back up all data** in Library to download all stored datasets. **Restore backup** merges a v2 backup into the current library. Individual datasets can also be exported as text or JSON.
 
-V2 Markdown FAQ exports contain an encoded metadata comment with the complete dataset so the FAQ can be reopened. This makes the file self-contained but potentially large; treat it as a copy of the underlying forum material.
+Markdown FAQ exports contain an encoded metadata comment with the complete dataset, so **Reopen an exported FAQ file** restores both the FAQ and the threads it was built from without rescraping or spending anything. This makes the file self-contained but potentially large; treat it as a copy of the underlying forum material.
 
 ### Fictional demo library
 
@@ -94,9 +104,15 @@ The extension limits host access to:
 - `https://boardgamegeek.com/*`
 - `https://api.anthropic.com/*`
 
-Requests validate HTTP responses and XML, use timeouts, retry temporary `202`, `429`, and server errors with backoff, and support user cancellation. The BGG client adds a delay between thread requests to reduce request pressure.
+Requests validate HTTP responses and XML, use timeouts, retry only genuinely temporary failures (`202`, `429`, and server errors) with backoff, and support user cancellation. A rejected request, such as an unknown model ID, fails immediately instead of being repeated. The BGG client adds a delay between thread requests to reduce request pressure.
 
-The default model is `claude-sonnet-4-20250514`. A custom Anthropic model ID can be entered without changing source code. Price estimates are informational and may become outdated.
+The model picker offers `claude-opus-5` (default), `claude-sonnet-5`, and
+`claude-haiku-4-5`, or a custom Anthropic model ID. Requests send `max_tokens`
+and, for models known to accept it, `output_config.effort`; `temperature` is not
+sent because current models reject it. Source material is chunked to the selected
+model's context window, so the 1M-context models need far fewer requests than
+`claude-haiku-4-5`. A custom model ID uses a conservative chunk size and reports
+no cost estimate. Price estimates are informational and may become outdated.
 
 ## Development
 

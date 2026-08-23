@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildChunks, estimateGeneration } from '../src/anthropic-api.js';
+import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, MODELS, DEFAULT_MODEL } from '../src/anthropic-api.js';
 import { faqMarkdown, importFaqMarkdown, datasetText, filenames } from '../src/exports.js';
 import { approximateTokens, escapeHtml, slug, uniqueCsv } from '../src/utils.js';
 
@@ -12,7 +12,7 @@ const dataset = {
   threads: [{ id: '3', subject: 'Scoring?', url: 'https://boardgamegeek.com/thread/3', posts: [
     { id: '4', author: 'designer', date: '2026-01-01', body: 'Score two points.', url: 'https://boardgamegeek.com/thread/3#4' }
   ]}],
-  faq: { text: '## Scoring\n\n**Q:** How?\n\n**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)', model: 'claude-sonnet-4-20250514', generatedAt: '2026-07-16T00:00:00.000Z' }
+  faq: { text: '## Scoring\n\n**Q:** How?\n\n**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)', model: 'claude-opus-5', generatedAt: '2026-07-16T00:00:00.000Z' }
 };
 
 test('utility functions normalize and escape input', () => {
@@ -41,8 +41,46 @@ test('an oversized post is divided into bounded continuations', () => {
 test('generation estimate reports at least one request', () => {
   const estimate = estimateGeneration(dataset.threads);
   assert.equal(estimate.chunks, 1);
+  assert.equal(estimate.requests, 1);
   assert.ok(estimate.inputTokens > 0);
   assert.ok(estimate.estimatedUsd > 0);
+});
+
+test('the default model is a current model and every model is priced', () => {
+  assert.equal(DEFAULT_MODEL, 'claude-opus-5');
+  assert.ok(MODELS.every(model => model.inputUsd > 0 && model.outputUsd > 0 && model.chunkTokens > 0));
+  assert.deepEqual(MODELS.map(model => model.id), ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']);
+});
+
+test('cost estimates follow the selected model and are omitted for custom IDs', () => {
+  const opus = estimateGeneration(dataset.threads, 'claude-opus-5');
+  const haiku = estimateGeneration(dataset.threads, 'claude-haiku-4-5');
+  assert.ok(haiku.estimatedUsd < opus.estimatedUsd);
+  assert.equal(estimateGeneration(dataset.threads, 'claude-experimental-x').estimatedUsd, null);
+});
+
+test('actual cost is derived from reported usage', () => {
+  assert.equal(usageCost('claude-opus-5', { input_tokens: 1_000_000, output_tokens: 1_000_000 }), 30);
+  assert.equal(usageCost('claude-experimental-x', { input_tokens: 10 }), null);
+  assert.equal(usageCost('claude-opus-5', {}), null);
+});
+
+test('a generation plan describes the work saved parts must match', () => {
+  const plan = generationPlan(dataset, 'claude-opus-5');
+  assert.equal(plan.chunkTotal, 1);
+  assert.equal(plan.model, 'claude-opus-5');
+  // A custom model uses the conservative chunk size, so its plan may differ from
+  // a saved one -- which is exactly why resuming re-checks the chunk count.
+  assert.ok(generationPlan(dataset, 'claude-custom').chunkTotal >= 1);
+});
+
+test('requests omit parameters the current models reject', async () => {
+  const source = await readFile(new URL('../src/anthropic-api.js', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('function requestBody'), source.indexOf('async function sendMessage'))
+    .replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(body, /temperature/);
+  assert.match(body, /max_tokens/);
+  assert.match(body, /output_config/);
 });
 
 test('v2 Markdown export round-trips the complete dataset', () => {
@@ -71,4 +109,56 @@ test('fictional demo backup contains three safe v2 datasets', async () => {
   assert.ok(backup.datasets.every(item => item.schemaVersion === 2 && item.id && item.threads.length));
   assert.doesNotMatch(text, /boardgamegeek\.com\/thread|sk-ant-|gh[pousr]_/i);
   assert.match(text, /example\.invalid/);
+});
+
+function stubFetch(handler) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => { calls.push(JSON.parse(options.body)); return handler(calls.length); };
+  return { calls, restore: () => { globalThis.fetch = original; } };
+}
+
+const okResponse = () => new Response(JSON.stringify({
+  content: [{ type: 'text', text: '**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)' }],
+  usage: { input_tokens: 100, output_tokens: 10 }, stop_reason: 'end_turn'
+}), { status: 200 });
+
+test('a rejected request is not retried, so a bad model ID fails once', async () => {
+  const stub = stubFetch(() => new Response(JSON.stringify({ error: { message: 'invalid model' } }), { status: 400 }));
+  try {
+    await assert.rejects(
+      generateFaq({ dataset, apiKey: 'k', model: 'claude-opus-5' }),
+      /invalid model/
+    );
+    assert.equal(stub.calls.length, 1);
+  } finally { stub.restore(); }
+});
+
+test('each completed part is handed back for persistence before the next request', async () => {
+  const stub = stubFetch(() => okResponse());
+  const persisted = [];
+  try {
+    const faq = await generateFaq({
+      dataset, apiKey: 'k', model: 'claude-opus-5',
+      onPart: (parts, meta) => { persisted.push({ count: parts.length, chunkTotal: meta.chunkTotal, model: meta.model }); }
+    });
+    assert.equal(persisted.length, 1);
+    assert.deepEqual(persisted[0], { count: 1, chunkTotal: 1, model: 'claude-opus-5' });
+    assert.equal(faq.usage.input_tokens, 100);
+    assert.match(faq.text, /boardgamegeek\.com\/thread/);
+  } finally { stub.restore(); }
+});
+
+test('saved parts are reused instead of re-requested when resuming', async () => {
+  const stub = stubFetch(() => okResponse());
+  try {
+    // The single chunk is already covered by a saved part, so no extraction
+    // request should be sent at all.
+    const faq = await generateFaq({
+      dataset, apiKey: 'k', model: 'claude-opus-5',
+      startParts: ['**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)']
+    });
+    assert.equal(stub.calls.length, 0);
+    assert.match(faq.text, /Two points/);
+  } finally { stub.restore(); }
 });

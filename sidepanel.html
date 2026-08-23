@@ -21,19 +21,31 @@
 
   <main>
     <section id="tab-scrape" class="panel active">
-      <div class="card">
-        <h2>1. Find a game</h2>
-        <div class="grid two">
-          <label>Game name<input id="search-query" type="search" placeholder="Search BoardGameGeek"></label>
-          <label>Year (optional)<input id="search-year" inputmode="numeric" placeholder="2024"></label>
+      <div id="search-card" class="card step">
+        <div class="step-head">
+          <h2>1. Find a game</h2>
+          <button id="edit-search" class="ghost step-change hidden">Change</button>
         </div>
-        <button id="search-button" class="primary">Search</button>
-        <div id="search-results" class="result-list" aria-live="polite"></div>
+        <p id="search-summary" class="step-summary hidden"></p>
+        <div class="step-body">
+          <div class="grid two">
+            <label>Game name<input id="search-query" type="search" placeholder="Search BoardGameGeek"></label>
+            <label>Year (optional)<input id="search-year" inputmode="numeric" placeholder="2024"></label>
+          </div>
+          <button id="search-button" class="primary">Search</button>
+          <div id="search-results" class="result-list" aria-live="polite"></div>
+        </div>
       </div>
 
-      <div id="forum-card" class="card hidden">
-        <h2>2. Choose a forum</h2>
-        <div id="forum-results" class="result-list"></div>
+      <div id="forum-card" class="card step hidden">
+        <div class="step-head">
+          <h2>2. Choose a forum</h2>
+          <button id="edit-forum" class="ghost step-change hidden">Change</button>
+        </div>
+        <p id="forum-summary" class="step-summary hidden"></p>
+        <div class="step-body">
+          <div id="forum-results" class="result-list"></div>
+        </div>
       </div>
 
       <div id="options-card" class="card hidden">
@@ -55,8 +67,18 @@
           <button id="scrape-button" class="primary" disabled>Start scrape</button>
           <button id="cancel-scrape" class="danger hidden">Cancel</button>
         </div>
-        <div id="scrape-progress" class="progress hidden"><div></div></div>
-        <pre id="scrape-log" class="log hidden" aria-live="polite"></pre>
+        <div id="scrape-progress" class="running-status hidden">
+          <div id="scrape-bar" class="progress"><div></div></div>
+          <div class="running-line"><strong id="scrape-counter">0 / 0</strong><span id="scrape-eta" class="muted"></span></div>
+          <p id="scrape-current" class="running-current muted"></p>
+        </div>
+        <details id="scrape-details" class="detail-toggle hidden"><summary>Scrape details</summary><pre id="scrape-log" class="log" aria-live="polite"></pre></details>
+        <div id="scrape-result" class="notice hidden" aria-live="polite"></div>
+        <div id="scrape-next" class="button-row hidden">
+          <button id="next-generate" class="primary">Generate FAQ &rarr;</button>
+          <button id="next-library" class="secondary">Open Library</button>
+          <button id="next-retry" class="secondary hidden">Retry missing threads</button>
+        </div>
       </div>
     </section>
 
@@ -66,7 +88,7 @@
         <div id="faq-source" class="notice neutral">Choose a dataset from the Library or finish a scrape.</div>
         <label>Generation focus (optional)<input id="faq-focus" placeholder="Focus on end-game scoring"></label>
         <div class="grid two">
-          <label>Model<select id="model-select"><option value="claude-sonnet-4-20250514">Claude Sonnet 4</option><option value="custom">Custom model ID</option></select></label>
+          <label>Model<select id="model-select"></select></label>
           <label id="custom-model-wrap" class="hidden">Custom model ID<input id="custom-model" placeholder="claude-…"></label>
         </div>
         <div id="cost-estimate" class="notice neutral">Select a dataset to estimate request size.</div>
@@ -75,17 +97,23 @@
           <button id="generate-button" class="primary" disabled>Generate source-linked FAQ</button>
           <button id="cancel-faq" class="danger hidden">Cancel</button>
         </div>
-        <div id="faq-progress" class="progress hidden"><div></div></div>
-        <pre id="faq-output" class="faq-output hidden"></pre>
+        <div id="faq-progress-wrap" class="running-status hidden">
+          <div id="faq-progress" class="progress"><div></div></div>
+          <div class="running-line"><strong id="faq-counter">0 / 0</strong><span id="faq-stage" class="muted"></span></div>
+          <p class="running-current muted">Each completed part is saved, so an interrupted run can be resumed without paying for it twice.</p>
+        </div>
+        <div id="faq-result" class="notice hidden" aria-live="polite"></div>
+        <div id="faq-resume-row" class="button-row hidden"><button id="resume-button" class="primary">Resume generation</button><button id="discard-parts" class="ghost">Discard saved parts</button></div>
+        <details id="faq-output-wrap" class="hidden" open><summary>Generated FAQ</summary><pre id="faq-output" class="faq-output"></pre></details>
         <div id="faq-downloads" class="button-row hidden">
-          <button id="download-md" class="secondary">Markdown</button>
+          <button id="download-md" class="secondary">Download Markdown</button>
           <button id="download-html" class="secondary">HTML / Print to PDF</button>
         </div>
       </div>
       <div class="card">
-        <h2>Import an earlier v2 FAQ</h2>
-        <p class="muted">A v2 Markdown export embeds metadata needed to reopen its dataset.</p>
-        <label class="file-button">Choose Markdown<input id="faq-import" type="file" accept=".md,text/markdown"></label>
+        <h2>Reopen an exported FAQ file</h2>
+        <p class="muted">A Markdown FAQ exported by this extension carries its own scraped source data inside the file, so opening it here restores both the FAQ and the threads it was built from &mdash; no rescrape and no API cost.</p>
+        <label class="file-button">Choose a .md file<input id="faq-import" type="file" accept=".md,text/markdown"></label>
       </div>
     </section>
 
