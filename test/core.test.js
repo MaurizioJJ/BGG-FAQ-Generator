@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, MODELS, DEFAULT_MODEL } from '../src/anthropic-api.js';
+import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
 import { faqMarkdown, importFaqMarkdown, datasetText, filenames } from '../src/exports.js';
 import { approximateTokens, escapeHtml, slug, uniqueCsv } from '../src/utils.js';
 
@@ -48,8 +48,10 @@ test('generation estimate reports at least one request', () => {
 
 test('the default model is a current model and every model is priced', () => {
   assert.equal(DEFAULT_MODEL, 'claude-opus-5');
+  assert.equal(DEFAULT_MODELS.openai, 'gpt-5.6-terra');
   assert.ok(MODELS.every(model => model.inputUsd > 0 && model.outputUsd > 0 && model.chunkTokens > 0));
-  assert.deepEqual(MODELS.map(model => model.id), ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']);
+  assert.deepEqual(modelsFor('anthropic').map(model => model.id), ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']);
+  assert.deepEqual(modelsFor('openai').map(model => model.id), ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
 });
 
 test('cost estimates follow the selected model and are omitted for custom IDs', () => {
@@ -69,14 +71,15 @@ test('a generation plan describes the work saved parts must match', () => {
   const plan = generationPlan(dataset, 'claude-opus-5');
   assert.equal(plan.chunkTotal, 1);
   assert.equal(plan.model, 'claude-opus-5');
+  assert.equal(plan.provider, 'anthropic');
   // A custom model uses the conservative chunk size, so its plan may differ from
   // a saved one -- which is exactly why resuming re-checks the chunk count.
   assert.ok(generationPlan(dataset, 'claude-custom').chunkTotal >= 1);
 });
 
-test('requests omit parameters the current models reject', async () => {
+test('Anthropic requests omit parameters the current models reject', async () => {
   const source = await readFile(new URL('../src/anthropic-api.js', import.meta.url), 'utf8');
-  const body = source.slice(source.indexOf('function requestBody'), source.indexOf('async function sendMessage'))
+  const body = source.slice(source.indexOf('function anthropicRequestBody'), source.indexOf('function openaiRequestBody'))
     .replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(body, /temperature/);
   assert.match(body, /max_tokens/);
@@ -134,6 +137,21 @@ test('a rejected request is not retried, so a bad model ID fails once', async ()
   } finally { stub.restore(); }
 });
 
+test('OpenAI uses Responses API format and disables paid implicit cache writes', async () => {
+  const stub = stubFetch(() => new Response(JSON.stringify({
+    output_text: '**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)',
+    usage: { input_tokens: 100, output_tokens: 10 }
+  }), { status: 200 }));
+  try {
+    const faq = await generateFaq({ dataset, provider: 'openai', apiKey: 'k', model: 'gpt-5.6-terra' });
+    assert.equal(stub.calls[0].model, 'gpt-5.6-terra');
+    assert.equal(stub.calls[0].store, false);
+    assert.deepEqual(stub.calls[0].prompt_cache_options, { mode: 'explicit' });
+    assert.equal(faq.provider, 'openai');
+    assert.match(faq.text, /Two points/);
+  } finally { stub.restore(); }
+});
+
 test('each completed part is handed back for persistence before the next request', async () => {
   const stub = stubFetch(() => okResponse());
   const persisted = [];
@@ -161,4 +179,23 @@ test('saved parts are reused instead of re-requested when resuming', async () =>
     assert.equal(stub.calls.length, 0);
     assert.match(faq.text, /Two points/);
   } finally { stub.restore(); }
+});
+
+test('billable AI keys remain session-only even when the BGG token is remembered', async () => {
+  const local = {};
+  const session = {};
+  const area = values => ({
+    get: async keys => Object.fromEntries(keys.filter(key => key in values).map(key => [key, values[key]])),
+    set: async entries => Object.assign(values, entries),
+    remove: async keys => { for (const key of keys) delete values[key]; }
+  });
+  const originalChrome = globalThis.chrome;
+  globalThis.chrome = { storage: { local: area(local), session: area(session) } };
+  try {
+    const { saveCredentials, loadCredentials } = await import(`../src/storage.js?test=${Date.now()}`);
+    await saveCredentials({ bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', remember: true });
+    assert.deepEqual(local, { bggToken: 'bgg', rememberCredentials: true });
+    assert.deepEqual(session, { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai' });
+    assert.deepEqual(await loadCredentials(), { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', remember: true });
+  } finally { globalThis.chrome = originalChrome; }
 });

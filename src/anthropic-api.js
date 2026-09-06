@@ -1,6 +1,7 @@
 import { approximateTokens, sleep } from './utils.js';
 
-const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
 const MAX_OUTPUT_TOKENS = 16000;
 const REQUEST_TIMEOUT_MS = 300000;
 const REDUCTION_BATCH = 6;
@@ -11,24 +12,38 @@ const EXPECTED_OUTPUT_TOKENS = 4000;
 const FALLBACK_CHUNK_TOKENS = 28000;
 
 // Prices are USD per million tokens and are informational only.
-export const MODELS = [
-  { id: 'claude-opus-5', label: 'Claude Opus 5', inputUsd: 5, outputUsd: 25, chunkTokens: 120000, effort: true },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', inputUsd: 3, outputUsd: 15, chunkTokens: 120000, effort: true },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', inputUsd: 1, outputUsd: 5, chunkTokens: 60000, effort: false }
+export const PROVIDERS = [
+  { id: 'anthropic', label: 'Claude (Anthropic)' },
+  { id: 'openai', label: 'OpenAI' }
 ];
 
-export const DEFAULT_MODEL = MODELS[0].id;
+export const MODELS = [
+  { provider: 'anthropic', id: 'claude-opus-5', label: 'Claude Opus 5', inputUsd: 5, outputUsd: 25, chunkTokens: 120000, effort: true },
+  { provider: 'anthropic', id: 'claude-sonnet-5', label: 'Claude Sonnet 5', inputUsd: 3, outputUsd: 15, chunkTokens: 120000, effort: true },
+  { provider: 'anthropic', id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', inputUsd: 1, outputUsd: 5, chunkTokens: 60000, effort: false },
+  { provider: 'openai', id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', inputUsd: 4, outputUsd: 20, chunkTokens: 120000, effort: true },
+  { provider: 'openai', id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', inputUsd: 2, outputUsd: 12, chunkTokens: 120000, effort: true },
+  { provider: 'openai', id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', inputUsd: 0.2, outputUsd: 1.2, chunkTokens: 120000, effort: true }
+];
 
-export function modelProfile(model) {
-  return MODELS.find(entry => entry.id === model) || null;
+export const DEFAULT_PROVIDER = PROVIDERS[0].id;
+export const DEFAULT_MODELS = { anthropic: 'claude-opus-5', openai: 'gpt-5.6-terra' };
+export const DEFAULT_MODEL = DEFAULT_MODELS[DEFAULT_PROVIDER];
+
+export function modelsFor(provider) {
+  return MODELS.filter(entry => entry.provider === provider);
+}
+
+export function modelProfile(model, provider = null) {
+  return MODELS.find(entry => entry.id === model && (!provider || entry.provider === provider)) || null;
 }
 
 function chunkSizeFor(model) {
   return modelProfile(model)?.chunkTokens ?? FALLBACK_CHUNK_TOKENS;
 }
 
-export function usageCost(model, usage) {
-  const profile = modelProfile(model);
+export function usageCost(model, usage, provider = null) {
+  const profile = modelProfile(model, provider);
   if (!profile || !usage) return null;
   const input = usage.input_tokens || 0, output = usage.output_tokens || 0;
   if (!input && !output) return null;
@@ -77,7 +92,7 @@ function final(message) {
   return error;
 }
 
-function requestBody(model, prompt) {
+function anthropicRequestBody(model, prompt) {
   const profile = modelProfile(model);
   const body = { model, max_tokens: MAX_OUTPUT_TOKENS, messages: [{ role: 'user', content: prompt }] };
   // Current models reject `temperature`, and `effort` is only accepted by models
@@ -86,45 +101,56 @@ function requestBody(model, prompt) {
   return body;
 }
 
-async function sendMessage({ apiKey, model, prompt, signal, retries = 3 }) {
+function openaiRequestBody(model, prompt) {
+  const profile = modelProfile(model, 'openai');
+  const body = { model, max_output_tokens: MAX_OUTPUT_TOKENS, input: prompt, store: false };
+  if (profile?.effort) body.reasoning = { effort: 'low' };
+  // GPT-5.6 cache writes cost 1.25x normal input. Explicit mode with no
+  // breakpoints disables the implicit write, honoring the no-extra-cost rule.
+  body.prompt_cache_options = { mode: 'explicit' };
+  return body;
+}
+
+async function sendMessage({ provider, apiKey, model, prompt, signal, retries = 3 }) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     try {
-      const response = await fetch(ENDPOINT, {
+      const anthropic = provider === 'anthropic';
+      const response = await fetch(anthropic ? ANTHROPIC_ENDPOINT : OPENAI_ENDPOINT, {
         method: 'POST', signal: controller.signal,
-        headers: {
-          'content-type': 'application/json', 'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify(requestBody(model, prompt))
+        headers: anthropic
+          ? { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }
+          : { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(anthropic ? anthropicRequestBody(model, prompt) : openaiRequestBody(model, prompt))
       });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 401 || response.status === 403) throw final('Anthropic rejected the API key.');
+      const providerName = anthropic ? 'Anthropic' : 'OpenAI';
+      if (response.status === 401 || response.status === 403) throw final(`${providerName} rejected the API key.`);
       if (response.status === 429 || response.status >= 500) {
-        if (attempt === retries) throw new Error(data.error?.message || `Anthropic request failed (HTTP ${response.status}).`);
+        if (attempt === retries) throw new Error(data.error?.message || `${providerName} request failed (HTTP ${response.status}).`);
         await sleep(Math.min((2 ** attempt) * 1500, 12000)); continue;
       }
       // A 4xx other than 429 means the request itself is wrong (bad model ID,
       // malformed body). Retrying it just repeats the same failure.
-      // A 4xx other than 429 means the request itself is wrong (bad model ID,
-      // malformed body). Retrying it just repeats the same failure.
-      if (!response.ok) throw final(data.error?.message || `Anthropic request failed (HTTP ${response.status}).`);
-      if (data.stop_reason === 'refusal') throw final('Claude declined to process this material. Narrow the dataset or the focus instruction and retry.');
-      const text = data.content?.filter(item => item.type === 'text').map(item => item.text).join('\n').trim();
-      if (!text) throw new Error('Anthropic returned no FAQ text.');
+      if (!response.ok) throw final(data.error?.message || `${providerName} request failed (HTTP ${response.status}).`);
+      if (data.stop_reason === 'refusal' || data.status === 'failed') throw final(`${providerName} declined or failed to process this material.`);
+      const text = anthropic
+        ? data.content?.filter(item => item.type === 'text').map(item => item.text).join('\n').trim()
+        : (data.output_text || data.output?.flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n')).trim();
+      if (!text) throw new Error(`${providerName} returned no FAQ text.`);
       return { text, usage: data.usage || {} };
     } catch (error) {
-      if (error.name === 'AbortError') throw final(signal?.aborted ? 'FAQ generation cancelled.' : 'Anthropic request timed out.');
+      if (error.name === 'AbortError') throw final(signal?.aborted ? 'FAQ generation cancelled.' : 'AI request timed out.');
       if (attempt === retries || error.final) throw error;
       await sleep((2 ** attempt) * 1000);
     } finally {
       clearTimeout(timeout); signal?.removeEventListener('abort', abort);
     }
   }
-  throw new Error('Anthropic request failed.');
+  throw new Error('AI request failed.');
 }
 
 function extractionPrompt(dataset, chunk, index, total, focus) {
@@ -162,12 +188,13 @@ export function estimateGeneration(threads, model = DEFAULT_MODEL) {
  * Returns a plan describing how a dataset would be generated, so the UI can
  * decide whether saved partial work is still valid to resume from.
  */
-export function generationPlan(dataset, model) {
+export function generationPlan(dataset, model, provider = DEFAULT_PROVIDER) {
   const chunks = buildChunks(dataset.threads, chunkSizeFor(model));
-  return { model, chunkTotal: chunks.length, requests: chunks.length + reductionRequests(chunks.length) };
+  return { provider, model, chunkTotal: chunks.length, requests: chunks.length + reductionRequests(chunks.length) };
 }
 
-export async function generateFaq({ dataset, apiKey, model, focus, signal, onProgress, onPart, startParts = [] }) {
+export async function generateFaq({ dataset, provider = DEFAULT_PROVIDER, apiKey, model, focus, signal, onProgress, onPart, startParts = [] }) {
+  if (!PROVIDERS.some(entry => entry.id === provider)) throw new Error(`Unsupported AI provider: ${provider}`);
   const chunks = buildChunks(dataset.threads, chunkSizeFor(model));
   if (!chunks.length) throw new Error('The selected dataset has no posts to process.');
   const parts = startParts.slice(0, chunks.length);
@@ -176,19 +203,19 @@ export async function generateFaq({ dataset, apiKey, model, focus, signal, onPro
   let completedRequests = parts.length;
   for (let index = parts.length; index < chunks.length; index++) {
     onProgress?.(completedRequests, totalRequests, `Analyzing source group ${index + 1}/${chunks.length}`);
-    const result = await sendMessage({ apiKey, model, signal, prompt: extractionPrompt(dataset, chunks[index], index, chunks.length, focus) });
+    const result = await sendMessage({ provider, apiKey, model, signal, prompt: extractionPrompt(dataset, chunks[index], index, chunks.length, focus) });
     parts.push(result.text);
     usage.input_tokens += result.usage.input_tokens || 0; usage.output_tokens += result.usage.output_tokens || 0;
     completedRequests++;
     // Persist after every request so an interruption never discards paid work.
-    await onPart?.(parts, { model, chunkTotal: chunks.length, focus: focus || '', usage });
+    await onPart?.(parts, { provider, model, chunkTotal: chunks.length, focus: focus || '', usage });
   }
   let level = parts;
   while (level.length > 1) {
     const next = [];
     for (let index = 0; index < level.length; index += REDUCTION_BATCH) {
       onProgress?.(completedRequests, totalRequests, 'Consolidating and checking citations');
-      const result = await sendMessage({ apiKey, model, signal, prompt: synthesisPrompt(dataset, level.slice(index, index + REDUCTION_BATCH), focus) });
+      const result = await sendMessage({ provider, apiKey, model, signal, prompt: synthesisPrompt(dataset, level.slice(index, index + REDUCTION_BATCH), focus) });
       next.push(result.text); usage.input_tokens += result.usage.input_tokens || 0; usage.output_tokens += result.usage.output_tokens || 0; completedRequests++;
     }
     level = next;
@@ -196,5 +223,5 @@ export async function generateFaq({ dataset, apiKey, model, focus, signal, onPro
   const text = level[0];
   if (!/https:\/\/boardgamegeek\.com\/thread\//.test(text)) throw new Error('The generated FAQ contained no valid BGG source links. Retry generation.');
   onProgress?.(totalRequests, totalRequests, 'FAQ ready');
-  return { text, usage, model, generatedAt: new Date().toISOString() };
+  return { text, usage, provider, model, generatedAt: new Date().toISOString() };
 }

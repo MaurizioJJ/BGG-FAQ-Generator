@@ -88,11 +88,12 @@
         <div id="faq-source" class="notice neutral">Choose a dataset from the Library or finish a scrape.</div>
         <label>Generation focus (optional)<input id="faq-focus" placeholder="Focus on end-game scoring"></label>
         <div class="grid two">
+          <label>Provider<select id="provider-select"></select></label>
           <label>Model<select id="model-select"></select></label>
           <label id="custom-model-wrap" class="hidden">Custom model ID<input id="custom-model" placeholder="claude-…"></label>
         </div>
         <div id="cost-estimate" class="notice neutral">Select a dataset to estimate request size.</div>
-        <label class="consent"><input id="ai-consent" type="checkbox"> I understand that forum content will be sent to Anthropic for inference, may incur charges, and must be used consistently with BGG’s terms.</label>
+        <label class="consent"><input id="ai-consent" type="checkbox"> <span id="ai-consent-text">I understand that forum content will be sent to Anthropic for inference, may incur charges, and must be used consistently with BGG’s terms.</span></label>
         <div class="button-row">
           <button id="generate-button" class="primary" disabled>Generate source-linked FAQ</button>
           <button id="cancel-faq" class="danger hidden">Cancel</button>
@@ -133,15 +134,16 @@
         <h2>Credentials</h2>
         <label>BGG application token<input id="bgg-token" type="password" autocomplete="off" placeholder="Bearer token"></label>
         <label>Anthropic API key<input id="anthropic-key" type="password" autocomplete="off" placeholder="sk-ant-…"></label>
-        <label><input id="remember-credentials" type="checkbox"> Remember credentials after Chrome restarts</label>
+        <label>OpenAI API key<input id="openai-key" type="password" autocomplete="off" placeholder="sk-…"></label>
+        <label><input id="remember-credentials" type="checkbox"> Remember my BGG token after Chrome restarts</label>
         <div class="button-row"><button id="save-settings" class="primary">Save</button><button id="clear-settings" class="danger">Clear credentials</button></div>
-        <p class="muted">Session-only credentials are cleared when the extension reloads, is disabled, updated, or Chrome restarts. Remembered credentials are stored in the local Chrome profile.</p>
+        <p class="muted">AI API keys are always session-only: they are cleared when the extension reloads, is disabled, updated, or Chrome restarts, and are never written to disk. Remembering the BGG token stores it unencrypted in the local Chrome profile.</p>
       </div>
       <div class="card">
         <h2>Data and compliance</h2>
-        <p>This tool is intended for non-commercial use. BGG forum content is sent to Anthropic only when you explicitly generate a FAQ. Generated answers must be verified against official rules and linked sources.</p>
+        <p>This tool is intended for non-commercial use. BGG forum content is sent only to your selected AI provider when you explicitly generate a FAQ. Generated answers must be verified against official rules and linked sources.</p>
         <a class="bgg-credit" href="https://boardgamegeek.com" target="_blank" rel="noreferrer">Powered by <strong>BoardGameGeek</strong></a>
-        <p><a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" rel="noreferrer">BGG XML API Terms</a> · <a href="https://docs.anthropic.com/en/api/messages" target="_blank" rel="noreferrer">Anthropic Messages API</a></p>
+        <p><a href="https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use" target="_blank" rel="noreferrer">BGG XML API Terms</a> · <a href="https://docs.anthropic.com/en/api/messages" target="_blank" rel="noreferrer">Anthropic Messages API</a> · <a href="https://developers.openai.com/api/reference/responses" target="_blank" rel="noreferrer">OpenAI Responses API</a></p>
       </div>
     </section>
   </main>

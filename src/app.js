@@ -1,6 +1,6 @@
 import { searchGames, getForums, getForumThreads, getThread } from './bgg-api.js';
 import { datasets, loadCredentials, saveCredentials, clearCredentials, exportBackup, importBackup } from './storage.js';
-import { MODELS, DEFAULT_MODEL, usageCost, estimateGeneration, generationPlan, generateFaq } from './anthropic-api.js';
+import { PROVIDERS, DEFAULT_PROVIDER, DEFAULT_MODELS, modelsFor, usageCost, estimateGeneration, generationPlan, generateFaq } from './anthropic-api.js';
 import { faqMarkdown, faqHtml, importFaqMarkdown, datasetJson, datasetText, filenames } from './exports.js';
 import { download, element, formatDuration, safeDate, setChildren, uniqueCsv } from './utils.js';
 
@@ -59,10 +59,11 @@ function activateTab(name) {
   if (name === 'faq') renderFaqSource();
 }
 
-async function credentials(requireAnthropic = false) {
+async function credentials(provider = null) {
   const values = await loadCredentials();
   if (!values.bggToken) { activateTab('settings'); throw new Error('Add a BGG application token in Settings.'); }
-  if (requireAnthropic && !values.anthropicKey) { activateTab('settings'); throw new Error('Add an Anthropic API key in Settings.'); }
+  if (provider === 'anthropic' && !values.anthropicKey) { activateTab('settings'); throw new Error('Add an Anthropic API key in Settings.'); }
+  if (provider === 'openai' && !values.openaiKey) { activateTab('settings'); throw new Error('Add an OpenAI API key in Settings.'); }
   return values;
 }
 
@@ -245,22 +246,30 @@ async function startScrape() {
   }
 }
 
-function populateModels() {
+function selectedProvider() { return $('provider-select').value; }
+
+function populateModels(preferred = '') {
+  const provider = selectedProvider();
   const select = $('model-select');
   setChildren(select,
-    ...MODELS.map(model => element('option', { text: `${model.label} · $${model.inputUsd}/$${model.outputUsd} per Mtok`, attrs: { value: model.id } })),
+    ...modelsFor(provider).map(model => element('option', { text: `${model.label} · $${model.inputUsd}/$${model.outputUsd} per Mtok`, attrs: { value: model.id } })),
     element('option', { text: 'Custom model ID', attrs: { value: 'custom' } })
   );
-  select.value = DEFAULT_MODEL;
+  select.value = preferred || DEFAULT_MODELS[provider];
+  if (!select.value) select.value = 'custom';
+  $('custom-model').placeholder = provider === 'anthropic' ? 'claude-…' : 'gpt-…';
+  show('custom-model-wrap', select.value === 'custom');
+  $('ai-consent-text').textContent = `I understand that forum content will be sent to ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} for inference, may incur charges, and must be used consistently with BGG’s terms.`;
 }
 
 function selectedModel() { return $('model-select').value === 'custom' ? $('custom-model').value.trim() : $('model-select').value; }
 
 /** Saved partial work is only reusable if the same model would rebuild the same chunks. */
-function resumableParts(dataset, model) {
+function resumableParts(dataset, provider, model) {
   const saved = dataset?.generation;
-  if (!saved?.parts?.length || !model || saved.model !== model) return null;
-  const plan = generationPlan(dataset, model);
+  const savedProvider = saved?.provider || 'anthropic';
+  if (!saved?.parts?.length || !model || saved.model !== model || savedProvider !== provider) return null;
+  const plan = generationPlan(dataset, model, provider);
   if (saved.chunkTotal !== plan.chunkTotal || saved.parts.length >= plan.chunkTotal) return null;
   return { parts: saved.parts, chunkTotal: plan.chunkTotal, focus: saved.focus || '' };
 }
@@ -278,6 +287,7 @@ function renderFaqSource() {
   $('faq-source').textContent = `${dataset.game.name} · ${dataset.forum.title} · ${dataset.threads.length} threads / ${posts} posts`;
 
   const model = selectedModel();
+  const provider = selectedProvider();
   const estimate = estimateGeneration(dataset.threads, model);
   $('cost-estimate').textContent = `${estimate.requests} request(s) · about ${estimate.inputTokens.toLocaleString()} input and ${estimate.outputTokens.toLocaleString()} output tokens` +
     (estimate.estimatedUsd === null
@@ -287,7 +297,7 @@ function renderFaqSource() {
 
   if (busy) return;
 
-  const resumable = resumableParts(dataset, model);
+  const resumable = resumableParts(dataset, provider, model);
   if (resumable) {
     notice('faq-result', 'error',
       summaryBlock('Unfinished generation', `${resumable.parts.length} of ${resumable.chunkTotal} source groups already analyzed`),
@@ -307,7 +317,7 @@ function renderFaqSource() {
   if (dataset.faq?.text) {
     $('faq-output').textContent = dataset.faq.text;
     show('faq-output-wrap'); show('faq-downloads');
-    const cost = usageCost(dataset.faq.model, dataset.faq.usage);
+    const cost = usageCost(dataset.faq.model, dataset.faq.usage, dataset.faq.provider || 'anthropic');
     notice('faq-result', 'success',
       summaryBlock('FAQ ready', `${dataset.faq.model} · ${new Date(dataset.faq.generatedAt).toLocaleString()}` + (cost === null ? '' : ` · US$${cost.toFixed(2)} actual`)),
       element('p', { className: 'muted', text: 'Download it below, then verify the answers against the linked threads and the official rulebook. Generating again replaces this FAQ.' })
@@ -318,11 +328,13 @@ function renderFaqSource() {
 async function runGeneration({ resume }) {
   const dataset = state.activeDataset;
   try {
-    const { anthropicKey } = await credentials(true); const model = selectedModel();
+    const provider = selectedProvider();
+    const values = await credentials(provider); const model = selectedModel();
+    const apiKey = provider === 'anthropic' ? values.anthropicKey : values.openaiKey;
     if (!model) throw new Error('Enter a model ID.');
     if (!$('ai-consent').checked) throw new Error('Confirm the AI data-transfer notice first.');
     state.faqError = '';
-    const saved = resume ? resumableParts(dataset, model) : null;
+    const saved = resume ? resumableParts(dataset, provider, model) : null;
     if (resume && !saved) throw new Error('The saved parts no longer match this dataset and model.');
     const focus = resume ? saved.focus : $('faq-focus').value.trim();
     if (resume) $('faq-focus').value = focus;
@@ -333,7 +345,7 @@ async function runGeneration({ resume }) {
     $('generate-button').disabled = true;
 
     const faq = await generateFaq({
-      dataset, apiKey: anthropicKey, model, focus, signal: state.faqController.signal,
+      dataset, provider, apiKey, model, focus, signal: state.faqController.signal,
       startParts: saved?.parts || [],
       onProgress: (current, total, text) => {
         bar('faq-progress', current, total);
@@ -352,7 +364,7 @@ async function runGeneration({ resume }) {
     setStatus('FAQ failed', 'error'); toast(errorMessage(error));
     // A resumable run explains itself through the resume panel; anything else
     // needs the error kept on screen rather than only in a four-second toast.
-    state.faqError = resumableParts(dataset, selectedModel()) ? '' : errorMessage(error);
+    state.faqError = resumableParts(dataset, selectedProvider(), selectedModel()) ? '' : errorMessage(error);
   } finally {
     state.faqController = null; show('cancel-faq', false); show('faq-progress-wrap', false);
     renderFaqSource(); await renderLibrary();
@@ -411,6 +423,7 @@ function bindEvents() {
   $('cancel-scrape').addEventListener('click', () => state.scrapeController?.abort());
   $('designer-only').addEventListener('change', () => show('authors-wrap', $('designer-only').checked));
   $('ai-consent').addEventListener('change', renderFaqSource);
+  $('provider-select').addEventListener('change', () => { $('ai-consent').checked = false; populateModels(); renderFaqSource(); });
   $('model-select').addEventListener('change', () => { show('custom-model-wrap', $('model-select').value === 'custom'); renderFaqSource(); });
   $('custom-model').addEventListener('input', renderFaqSource);
   $('generate-button').addEventListener('click', () => runGeneration({ resume: false }));
@@ -426,13 +439,14 @@ function bindEvents() {
   $('refresh-library').addEventListener('click', renderLibrary);
   $('export-library').addEventListener('click', async () => { const backup = await exportBackup(); download(JSON.stringify(backup, null, 2), `bgg-faq-backup-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); });
   $('import-library').addEventListener('change', async event => { try { const text = await readFile(event.target); if (!text) return; const count = await importBackup(JSON.parse(text)); await renderLibrary(); toast(`Restored ${count} dataset(s).`); } catch (error) { toast(errorMessage(error)); } });
-  $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), remember: $('remember-credentials').checked }); toast('Credentials saved.'); });
-  $('clear-settings').addEventListener('click', async () => { await clearCredentials(); $('bgg-token').value = ''; $('anthropic-key').value = ''; $('remember-credentials').checked = false; toast('Credentials cleared.'); });
+  $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), openaiKey: $('openai-key').value.trim(), remember: $('remember-credentials').checked }); toast('Credentials saved.'); });
+  $('clear-settings').addEventListener('click', async () => { await clearCredentials(); $('bgg-token').value = ''; $('anthropic-key').value = ''; $('openai-key').value = ''; $('remember-credentials').checked = false; toast('Credentials cleared.'); });
 }
 
 async function init() {
-  populateModels(); bindEvents();
-  const saved = await loadCredentials(); $('bgg-token').value = saved.bggToken; $('anthropic-key').value = saved.anthropicKey; $('remember-credentials').checked = saved.remember;
+  setChildren($('provider-select'), ...PROVIDERS.map(provider => element('option', { text: provider.label, attrs: { value: provider.id } })));
+  $('provider-select').value = DEFAULT_PROVIDER; populateModels(); bindEvents();
+  const saved = await loadCredentials(); $('bgg-token').value = saved.bggToken; $('anthropic-key').value = saved.anthropicKey; $('openai-key').value = saved.openaiKey; $('remember-credentials').checked = saved.remember;
   const all = await datasets.all(); state.activeDataset = all.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0] || null;
   renderFaqSource(); renderLibrary(); setStatus('Ready', 'success');
 }

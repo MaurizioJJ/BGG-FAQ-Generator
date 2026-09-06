@@ -1,8 +1,8 @@
 # BGG FAQ Generator v2
 
-A privacy-conscious Chrome side-panel extension for collecting BoardGameGeek forum discussions and producing source-linked board-game FAQs with Claude.
+A privacy-conscious Chrome side-panel extension for collecting BoardGameGeek forum discussions and producing source-linked board-game FAQs with Claude or OpenAI.
 
-BGG FAQ Generator is an independent, non-commercial utility. It is not affiliated with or endorsed by BoardGameGeek or Anthropic.
+BGG FAQ Generator is an independent, non-commercial utility. It is not affiliated with or endorsed by BoardGameGeek, Anthropic, or OpenAI.
 
 ## Highlights
 
@@ -16,13 +16,13 @@ BGG FAQ Generator is an independent, non-commercial utility. It is not affiliate
 - Export thread data as text or JSON and FAQs as Markdown or printable HTML.
 - Reopen an exported Markdown FAQ, which carries its own source dataset inside the file.
 - Back up and restore the entire local library.
-- Keep credentials session-only by default or explicitly remember them in the Chrome profile.
+- Keep billable AI API keys session-only; optionally remember only the BGG token in the Chrome profile.
 
 ## Requirements
 
 - Chrome 114 or later.
 - An approved BoardGameGeek application token.
-- An Anthropic API key for optional FAQ generation.
+- An Anthropic or OpenAI API key for optional FAQ generation.
 - Non-commercial use consistent with the applicable service terms.
 
 Register BGG applications and manage tokens at [boardgamegeek.com/applications](https://boardgamegeek.com/applications). Review the [BGG XML API terms](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use) before use.
@@ -68,7 +68,7 @@ instead of paying for the completed ones again. **Discard saved parts** starts
 over. After a successful run the panel reports the model, the timestamp, and the
 actual cost derived from the reported token usage.
 
-The generator instructs Claude to preserve disagreements, distinguish unresolved/community answers, and cite the supplied thread/post URLs. Generated output can still be wrong.
+The generator instructs the selected model to preserve disagreements, distinguish unresolved/community answers, and cite the supplied thread/post URLs. Generated output can still be wrong.
 
 ### Back up and restore
 
@@ -90,9 +90,9 @@ a time. It never loads automatically and does not replace existing datasets.
 ## Privacy and credentials
 
 - No analytics, telemetry, advertising, or project-operated server is included.
-- Credentials use `chrome.storage.session` by default and are cleared when the extension reloads, is disabled, updated, or Chrome restarts.
-- Enabling **Remember credentials** stores them in `chrome.storage.local` in the Chrome profile.
-- BGG forum content is sent to Anthropic only after the user confirms FAQ generation.
+- AI API keys use `chrome.storage.session` and are cleared when the extension reloads, is disabled, updated, or Chrome restarts.
+- Enabling **Remember my BGG token** stores only that token in `chrome.storage.local` in the Chrome profile.
+- BGG forum content is sent only to the selected provider after the user confirms FAQ generation.
 - Complete datasets and checkpoints are stored locally in IndexedDB.
 
 See [PRIVACY.md](PRIVACY.md) for details.
@@ -103,16 +103,21 @@ The extension limits host access to:
 
 - `https://boardgamegeek.com/*`
 - `https://api.anthropic.com/*`
+- `https://api.openai.com/*`
 
 Requests validate HTTP responses and XML, use timeouts, retry only genuinely temporary failures (`202`, `429`, and server errors) with backoff, and support user cancellation. A rejected request, such as an unknown model ID, fails immediately instead of being repeated. The BGG client adds a delay between thread requests to reduce request pressure.
 
-The model picker offers `claude-opus-5` (default), `claude-sonnet-5`, and
-`claude-haiku-4-5`, or a custom Anthropic model ID. Requests send `max_tokens`
+The provider and model pickers offer Claude (`claude-opus-5` by default,
+`claude-sonnet-5`, and `claude-haiku-4-5`) or OpenAI (`gpt-5.6-terra` by
+default, `gpt-5.6-sol`, and `gpt-5.6-luna`), plus a custom model ID. Claude requests send `max_tokens`
 and, for models known to accept it, `output_config.effort`; `temperature` is not
 sent because current models reject it. Source material is chunked to the selected
 model's context window, so the 1M-context models need far fewer requests than
 `claude-haiku-4-5`. A custom model ID uses a conservative chunk size and reports
-no cost estimate. Price estimates are informational and may become outdated.
+no cost estimate. OpenAI requests use the Responses API with response storage
+disabled. Prompt caching is not enabled: current GPT-5.6 cache writes cost more
+than ordinary input, so enabling them by default would violate the no-extra-cost
+rule. Price estimates are informational and may become outdated.
 
 ## Development
 

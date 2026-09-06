@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added a Claude/OpenAI provider picker with current per-provider model choices,
+  separate session-only API keys, provider-aware consent, pricing, resumable
+  checkpoints, and OpenAI Responses API support with response storage disabled.
+- Explicitly disabled GPT-5.6 implicit prompt-cache writes because current cache
+  writes cost more than ordinary input; no paid caching is enabled by default.
 - Collapsed each finished scrape step into a one-line summary with a **Change**
   button, and scrolled the next step into view. On a game with eight forums this
   moves **Start scrape** from 1236px down the page to 608px and nearly halves the
