@@ -2,6 +2,7 @@ import { approximateTokens, sleep } from './utils.js';
 
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MAX_OUTPUT_TOKENS = 16000;
 const REQUEST_TIMEOUT_MS = 300000;
 const REDUCTION_BATCH = 6;
@@ -13,9 +14,14 @@ const FALLBACK_CHUNK_TOKENS = 28000;
 
 // Prices are USD per million tokens and are informational only.
 export const PROVIDERS = [
-  { id: 'anthropic', label: 'Claude (Anthropic)' },
-  { id: 'openai', label: 'OpenAI' }
+  { id: 'anthropic', label: 'Claude (Anthropic)', name: 'Anthropic', keyField: 'anthropicKey', modelHint: 'claude-…' },
+  { id: 'openai', label: 'OpenAI', name: 'OpenAI', keyField: 'openaiKey', modelHint: 'gpt-…' },
+  { id: 'gemini', label: 'Gemini (Google)', name: 'Google', keyField: 'geminiKey', modelHint: 'gemini-…' }
 ];
+
+export function providerInfo(provider) {
+  return PROVIDERS.find(entry => entry.id === provider) || null;
+}
 
 export const MODELS = [
   { provider: 'anthropic', id: 'claude-opus-5', label: 'Claude Opus 5', inputUsd: 5, outputUsd: 25, chunkTokens: 120000, effort: true },
@@ -23,11 +29,16 @@ export const MODELS = [
   { provider: 'anthropic', id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', inputUsd: 1, outputUsd: 5, chunkTokens: 60000, effort: false },
   { provider: 'openai', id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', inputUsd: 4, outputUsd: 20, chunkTokens: 120000, effort: true },
   { provider: 'openai', id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', inputUsd: 2, outputUsd: 12, chunkTokens: 120000, effort: true },
-  { provider: 'openai', id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', inputUsd: 0.2, outputUsd: 1.2, chunkTokens: 120000, effort: true }
+  { provider: 'openai', id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', inputUsd: 0.2, outputUsd: 1.2, chunkTokens: 120000, effort: true },
+  // Gemini 3.8 Flash is on launch pricing until 2026-12-31 ($1.50/$7.50 from 2027).
+  // Chunks stay under 200K tokens, where Gemini Pro's higher long-prompt rate starts.
+  { provider: 'gemini', id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)', inputUsd: 2, outputUsd: 12, chunkTokens: 120000, effort: true },
+  { provider: 'gemini', id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', inputUsd: 0.75, outputUsd: 3.75, chunkTokens: 120000, effort: true },
+  { provider: 'gemini', id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', inputUsd: 0.3, outputUsd: 2.5, chunkTokens: 120000, effort: false }
 ];
 
 export const DEFAULT_PROVIDER = PROVIDERS[0].id;
-export const DEFAULT_MODELS = { anthropic: 'claude-opus-5', openai: 'gpt-5.6-terra' };
+export const DEFAULT_MODELS = { anthropic: 'claude-opus-5', openai: 'gpt-5.6-terra', gemini: 'gemini-3.8-flash' };
 export const DEFAULT_MODEL = DEFAULT_MODELS[DEFAULT_PROVIDER];
 
 export function modelsFor(provider) {
@@ -111,6 +122,56 @@ function openaiRequestBody(model, prompt) {
   return body;
 }
 
+function geminiRequestBody(model, prompt) {
+  const profile = modelProfile(model, 'gemini');
+  // maxOutputTokens includes thinking tokens on Gemini, so it is the same hard ceiling.
+  const generationConfig = { maxOutputTokens: MAX_OUTPUT_TOKENS };
+  if (profile?.effort) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+  return { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig };
+}
+
+const GEMINI_BLOCKED = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII']);
+
+// Each provider normalizes to { text, usage: { input_tokens, output_tokens }, refused }.
+const API = {
+  anthropic: {
+    url: () => ANTHROPIC_ENDPOINT,
+    headers: apiKey => ({ 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }),
+    body: anthropicRequestBody,
+    parse: data => ({
+      refused: data.stop_reason === 'refusal',
+      text: data.content?.filter(item => item.type === 'text').map(item => item.text).join('\n').trim(),
+      usage: data.usage || {}
+    })
+  },
+  openai: {
+    url: () => OPENAI_ENDPOINT,
+    headers: apiKey => ({ 'content-type': 'application/json', authorization: `Bearer ${apiKey}` }),
+    body: openaiRequestBody,
+    parse: data => ({
+      refused: data.status === 'failed',
+      text: (data.output_text || data.output?.flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n') || '').trim(),
+      usage: data.usage || {}
+    })
+  },
+  gemini: {
+    // The key travels in a header rather than the URL so it stays out of logs.
+    url: model => `${GEMINI_ENDPOINT}/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`,
+    headers: apiKey => ({ 'content-type': 'application/json', 'x-goog-api-key': apiKey }),
+    body: geminiRequestBody,
+    parse: data => {
+      const candidate = data.candidates?.[0];
+      const meta = data.usageMetadata || {};
+      return {
+        refused: Boolean(data.promptFeedback?.blockReason) || GEMINI_BLOCKED.has(candidate?.finishReason),
+        text: (candidate?.content?.parts || []).filter(part => !part.thought && part.text).map(part => part.text).join('\n').trim(),
+        // Thinking tokens are billed at the output rate.
+        usage: { input_tokens: meta.promptTokenCount || 0, output_tokens: (meta.candidatesTokenCount || 0) + (meta.thoughtsTokenCount || 0) }
+      };
+    }
+  }
+};
+
 async function sendMessage({ provider, apiKey, model, prompt, signal, retries = 3 }) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
@@ -118,16 +179,14 @@ async function sendMessage({ provider, apiKey, model, prompt, signal, retries = 
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     try {
-      const anthropic = provider === 'anthropic';
-      const response = await fetch(anthropic ? ANTHROPIC_ENDPOINT : OPENAI_ENDPOINT, {
+      const api = API[provider];
+      const providerName = providerInfo(provider).name;
+      const response = await fetch(api.url(model), {
         method: 'POST', signal: controller.signal,
-        headers: anthropic
-          ? { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }
-          : { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify(anthropic ? anthropicRequestBody(model, prompt) : openaiRequestBody(model, prompt))
+        headers: api.headers(apiKey),
+        body: JSON.stringify(api.body(model, prompt))
       });
       const data = await response.json().catch(() => ({}));
-      const providerName = anthropic ? 'Anthropic' : 'OpenAI';
       if (response.status === 401 || response.status === 403) throw final(`${providerName} rejected the API key.`);
       if (response.status === 429 || response.status >= 500) {
         if (attempt === retries) throw new Error(data.error?.message || `${providerName} request failed (HTTP ${response.status}).`);
@@ -136,12 +195,10 @@ async function sendMessage({ provider, apiKey, model, prompt, signal, retries = 
       // A 4xx other than 429 means the request itself is wrong (bad model ID,
       // malformed body). Retrying it just repeats the same failure.
       if (!response.ok) throw final(data.error?.message || `${providerName} request failed (HTTP ${response.status}).`);
-      if (data.stop_reason === 'refusal' || data.status === 'failed') throw final(`${providerName} declined or failed to process this material.`);
-      const text = anthropic
-        ? data.content?.filter(item => item.type === 'text').map(item => item.text).join('\n').trim()
-        : (data.output_text || data.output?.flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n')).trim();
+      const { refused, text, usage } = api.parse(data);
+      if (refused) throw final(`${providerName} declined or failed to process this material.`);
       if (!text) throw new Error(`${providerName} returned no FAQ text.`);
-      return { text, usage: data.usage || {} };
+      return { text, usage };
     } catch (error) {
       if (error.name === 'AbortError') throw final(signal?.aborted ? 'FAQ generation cancelled.' : 'AI request timed out.');
       if (attempt === retries || error.final) throw error;
@@ -194,7 +251,7 @@ export function generationPlan(dataset, model, provider = DEFAULT_PROVIDER) {
 }
 
 export async function generateFaq({ dataset, provider = DEFAULT_PROVIDER, apiKey, model, focus, signal, onProgress, onPart, startParts = [] }) {
-  if (!PROVIDERS.some(entry => entry.id === provider)) throw new Error(`Unsupported AI provider: ${provider}`);
+  if (!providerInfo(provider)) throw new Error(`Unsupported AI provider: ${provider}`);
   const chunks = buildChunks(dataset.threads, chunkSizeFor(model));
   if (!chunks.length) throw new Error('The selected dataset has no posts to process.');
   const parts = startParts.slice(0, chunks.length);

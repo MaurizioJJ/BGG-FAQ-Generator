@@ -1,6 +1,6 @@
 import { searchGames, getForums, getForumThreads, getThread } from './bgg-api.js';
 import { datasets, loadCredentials, saveCredentials, clearCredentials, exportBackup, importBackup } from './storage.js';
-import { PROVIDERS, DEFAULT_PROVIDER, DEFAULT_MODELS, modelsFor, usageCost, estimateGeneration, generationPlan, generateFaq } from './anthropic-api.js';
+import { PROVIDERS, DEFAULT_PROVIDER, providerInfo, DEFAULT_MODELS, modelsFor, usageCost, estimateGeneration, generationPlan, generateFaq } from './anthropic-api.js';
 import { faqMarkdown, faqHtml, importFaqMarkdown, datasetJson, datasetText, filenames } from './exports.js';
 import { download, element, formatDuration, safeDate, setChildren, uniqueCsv } from './utils.js';
 
@@ -62,8 +62,8 @@ function activateTab(name) {
 async function credentials(provider = null) {
   const values = await loadCredentials();
   if (!values.bggToken) { activateTab('settings'); throw new Error('Add a BGG application token in Settings.'); }
-  if (provider === 'anthropic' && !values.anthropicKey) { activateTab('settings'); throw new Error('Add an Anthropic API key in Settings.'); }
-  if (provider === 'openai' && !values.openaiKey) { activateTab('settings'); throw new Error('Add an OpenAI API key in Settings.'); }
+  const info = providerInfo(provider);
+  if (info && !values[info.keyField]) { activateTab('settings'); throw new Error(`Add a ${info.name} API key in Settings.`); }
   return values;
 }
 
@@ -257,9 +257,9 @@ function populateModels(preferred = '') {
   );
   select.value = preferred || DEFAULT_MODELS[provider];
   if (!select.value) select.value = 'custom';
-  $('custom-model').placeholder = provider === 'anthropic' ? 'claude-…' : 'gpt-…';
+  $('custom-model').placeholder = providerInfo(provider).modelHint;
   show('custom-model-wrap', select.value === 'custom');
-  $('ai-consent-text').textContent = `I understand that forum content will be sent to ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} for inference, may incur charges, and must be used consistently with BGG’s terms.`;
+  $('ai-consent-text').textContent = `I understand that forum content will be sent to ${providerInfo(provider).name} for inference, may incur charges, and must be used consistently with BGG’s terms.`;
 }
 
 function selectedModel() { return $('model-select').value === 'custom' ? $('custom-model').value.trim() : $('model-select').value; }
@@ -330,7 +330,7 @@ async function runGeneration({ resume }) {
   try {
     const provider = selectedProvider();
     const values = await credentials(provider); const model = selectedModel();
-    const apiKey = provider === 'anthropic' ? values.anthropicKey : values.openaiKey;
+    const apiKey = values[providerInfo(provider).keyField];
     if (!model) throw new Error('Enter a model ID.');
     if (!$('ai-consent').checked) throw new Error('Confirm the AI data-transfer notice first.');
     state.faqError = '';
@@ -439,14 +439,14 @@ function bindEvents() {
   $('refresh-library').addEventListener('click', renderLibrary);
   $('export-library').addEventListener('click', async () => { const backup = await exportBackup(); download(JSON.stringify(backup, null, 2), `bgg-faq-backup-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); });
   $('import-library').addEventListener('change', async event => { try { const text = await readFile(event.target); if (!text) return; const count = await importBackup(JSON.parse(text)); await renderLibrary(); toast(`Restored ${count} dataset(s).`); } catch (error) { toast(errorMessage(error)); } });
-  $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), openaiKey: $('openai-key').value.trim(), remember: $('remember-credentials').checked }); toast('Credentials saved.'); });
-  $('clear-settings').addEventListener('click', async () => { await clearCredentials(); $('bgg-token').value = ''; $('anthropic-key').value = ''; $('openai-key').value = ''; $('remember-credentials').checked = false; toast('Credentials cleared.'); });
+  $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), openaiKey: $('openai-key').value.trim(), geminiKey: $('gemini-key').value.trim(), remember: $('remember-credentials').checked }); toast('Credentials saved.'); });
+  $('clear-settings').addEventListener('click', async () => { await clearCredentials(); $('bgg-token').value = ''; $('anthropic-key').value = ''; $('openai-key').value = ''; $('gemini-key').value = ''; $('remember-credentials').checked = false; toast('Credentials cleared.'); });
 }
 
 async function init() {
   setChildren($('provider-select'), ...PROVIDERS.map(provider => element('option', { text: provider.label, attrs: { value: provider.id } })));
   $('provider-select').value = DEFAULT_PROVIDER; populateModels(); bindEvents();
-  const saved = await loadCredentials(); $('bgg-token').value = saved.bggToken; $('anthropic-key').value = saved.anthropicKey; $('openai-key').value = saved.openaiKey; $('remember-credentials').checked = saved.remember;
+  const saved = await loadCredentials(); $('bgg-token').value = saved.bggToken; $('anthropic-key').value = saved.anthropicKey; $('openai-key').value = saved.openaiKey; $('gemini-key').value = saved.geminiKey; $('remember-credentials').checked = saved.remember;
   const all = await datasets.all(); state.activeDataset = all.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0] || null;
   renderFaqSource(); renderLibrary(); setStatus('Ready', 'success');
 }

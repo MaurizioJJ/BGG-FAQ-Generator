@@ -1,8 +1,8 @@
 # BGG FAQ Generator v2
 
-A privacy-conscious Chrome side-panel extension for collecting BoardGameGeek forum discussions and producing source-linked board-game FAQs with Claude or OpenAI.
+A privacy-conscious Chrome side-panel extension for collecting BoardGameGeek forum discussions and producing source-linked board-game FAQs with Claude, OpenAI, or Gemini.
 
-BGG FAQ Generator is an independent, non-commercial utility. It is not affiliated with or endorsed by BoardGameGeek, Anthropic, or OpenAI.
+BGG FAQ Generator is an independent, non-commercial utility. It is not affiliated with or endorsed by BoardGameGeek, Anthropic, OpenAI, or Google.
 
 ## Highlights
 
@@ -22,7 +22,7 @@ BGG FAQ Generator is an independent, non-commercial utility. It is not affiliate
 
 - Chrome 114 or later.
 - An approved BoardGameGeek application token.
-- An Anthropic or OpenAI API key for optional FAQ generation.
+- An Anthropic, OpenAI, or Gemini API key for optional FAQ generation. Gemini keys come from [Google AI Studio](https://aistudio.google.com/apikey).
 - Non-commercial use consistent with the applicable service terms.
 
 Register BGG applications and manage tokens at [boardgamegeek.com/applications](https://boardgamegeek.com/applications). Review the [BGG XML API terms](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use) before use.
@@ -104,18 +104,24 @@ The extension limits host access to:
 - `https://boardgamegeek.com/*`
 - `https://api.anthropic.com/*`
 - `https://api.openai.com/*`
+- `https://generativelanguage.googleapis.com/*`
 
 Requests validate HTTP responses and XML, use timeouts, retry only genuinely temporary failures (`202`, `429`, and server errors) with backoff, and support user cancellation. A rejected request, such as an unknown model ID, fails immediately instead of being repeated. The BGG client adds a delay between thread requests to reduce request pressure.
 
 The provider and model pickers offer Claude (`claude-opus-5` by default,
-`claude-sonnet-5`, and `claude-haiku-4-5`) or OpenAI (`gpt-5.6-terra` by
-default, `gpt-5.6-sol`, and `gpt-5.6-luna`), plus a custom model ID. Claude requests send `max_tokens`
+`claude-sonnet-5`, and `claude-haiku-4-5`), OpenAI (`gpt-5.6-terra` by
+default, `gpt-5.6-sol`, and `gpt-5.6-luna`), or Gemini (`gemini-3.8-flash` by
+default, `gemini-3.1-pro-preview`, and `gemini-3.5-flash-lite`), plus a custom model ID. Claude requests send `max_tokens`
 and, for models known to accept it, `output_config.effort`; `temperature` is not
 sent because current models reject it. Source material is chunked to the selected
 model's context window, so the 1M-context models need far fewer requests than
 `claude-haiku-4-5`. A custom model ID uses a conservative chunk size and reports
 no cost estimate. OpenAI requests use the Responses API with response storage
-disabled. Prompt caching is not enabled: current GPT-5.6 cache writes cost more
+disabled. Gemini requests use `generateContent` with the key in the
+`x-goog-api-key` header (never the URL) and `thinkingLevel: low` on models that
+accept it; thinking tokens are counted as output in the cost, as Google bills
+them. Gemini 3.8 Flash is priced at its launch rate, which rises on 1 January
+2027. Prompt caching is not enabled: current GPT-5.6 cache writes cost more
 than ordinary input, so enabling them by default would violate the no-extra-cost
 rule. Price estimates are informational and may become outdated.
 

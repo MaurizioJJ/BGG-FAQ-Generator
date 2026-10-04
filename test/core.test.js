@@ -52,6 +52,8 @@ test('the default model is a current model and every model is priced', () => {
   assert.ok(MODELS.every(model => model.inputUsd > 0 && model.outputUsd > 0 && model.chunkTokens > 0));
   assert.deepEqual(modelsFor('anthropic').map(model => model.id), ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']);
   assert.deepEqual(modelsFor('openai').map(model => model.id), ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+  assert.equal(DEFAULT_MODELS.gemini, 'gemini-3.8-flash');
+  assert.deepEqual(modelsFor('gemini').map(model => model.id), ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-3.5-flash-lite']);
 });
 
 test('cost estimates follow the selected model and are omitted for custom IDs', () => {
@@ -152,6 +154,41 @@ test('OpenAI uses Responses API format and disables paid implicit cache writes',
   } finally { stub.restore(); }
 });
 
+test('Gemini uses generateContent with a header key and bills thinking tokens as output', async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify({
+      candidates: [{ finishReason: 'STOP', content: { parts: [
+        { text: 'internal reasoning', thought: true },
+        { text: '**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)' }
+      ] } }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 10, thoughtsTokenCount: 5 }
+    }), { status: 200 });
+  };
+  try {
+    const faq = await generateFaq({ dataset, provider: 'gemini', apiKey: 'gk', model: 'gemini-3.8-flash' });
+    assert.equal(calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
+    assert.equal(calls[0].headers['x-goog-api-key'], 'gk');
+    assert.ok(!calls[0].url.includes('key='));
+    assert.deepEqual(calls[0].body.generationConfig, { maxOutputTokens: 16000, thinkingConfig: { thinkingLevel: 'low' } });
+    assert.equal(calls[0].body.contents[0].role, 'user');
+    assert.equal(faq.provider, 'gemini');
+    assert.doesNotMatch(faq.text, /internal reasoning/);
+    assert.deepEqual(faq.usage, { input_tokens: 100, output_tokens: 15 });
+    assert.ok(usageCost('gemini-3.8-flash', faq.usage, 'gemini') > 0);
+  } finally { globalThis.fetch = original; }
+});
+
+test('a Gemini safety block fails once instead of retrying', async () => {
+  const stub = stubFetch(() => new Response(JSON.stringify({ promptFeedback: { blockReason: 'SAFETY' } }), { status: 200 }));
+  try {
+    await assert.rejects(generateFaq({ dataset, provider: 'gemini', apiKey: 'k', model: 'gemini-3.8-flash' }), /Google declined/);
+    assert.equal(stub.calls.length, 1);
+  } finally { stub.restore(); }
+});
+
 test('each completed part is handed back for persistence before the next request', async () => {
   const stub = stubFetch(() => okResponse());
   const persisted = [];
@@ -193,9 +230,9 @@ test('billable AI keys remain session-only even when the BGG token is remembered
   globalThis.chrome = { storage: { local: area(local), session: area(session) } };
   try {
     const { saveCredentials, loadCredentials } = await import(`../src/storage.js?test=${Date.now()}`);
-    await saveCredentials({ bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', remember: true });
+    await saveCredentials({ bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem', remember: true });
     assert.deepEqual(local, { bggToken: 'bgg', rememberCredentials: true });
-    assert.deepEqual(session, { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai' });
-    assert.deepEqual(await loadCredentials(), { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', remember: true });
+    assert.deepEqual(session, { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem' });
+    assert.deepEqual(await loadCredentials(), { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem', remember: true });
   } finally { globalThis.chrome = originalChrome; }
 });

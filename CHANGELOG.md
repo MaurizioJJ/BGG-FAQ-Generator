@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added Gemini as a third provider: a session-only Gemini API key in Settings,
+  Gemini 3.8 Flash (default), 3.1 Pro preview, and 3.5 Flash-Lite with pricing,
+  and the `generateContent` API with the key sent in a header. Thinking tokens
+  are included in the reported cost; safety blocks fail once without retrying.
 - Added a Claude/OpenAI provider picker with current per-provider model choices,
   separate session-only API keys, provider-aware consent, pricing, resumable
   checkpoints, and OpenAI Responses API support with response storage disabled.

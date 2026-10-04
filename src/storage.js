@@ -51,7 +51,7 @@ export const datasets = {
 // chrome.storage.local is plaintext on disk in the Chrome profile, so the key
 // lives in session storage only, whatever the remember setting says.
 const LOCAL_KEYS = ['rememberCredentials', 'bggToken'];
-const SESSION_KEYS = ['bggToken', 'anthropicKey', 'openaiKey'];
+const SESSION_KEYS = ['bggToken', 'anthropicKey', 'openaiKey', 'geminiKey'];
 // Written by versions before the key was made session-only; purged on every load.
 const LEGACY_LOCAL_KEYS = ['anthropicKey', 'openaiKey'];
 
@@ -66,12 +66,13 @@ export async function loadCredentials() {
     bggToken: (remember ? local.bggToken : session.bggToken) || '',
     anthropicKey: session.anthropicKey || '',
     openaiKey: session.openaiKey || '',
+    geminiKey: session.geminiKey || '',
     remember
   };
 }
 
 export async function saveCredentials(credentials) {
-  await chrome.storage.session.set({ bggToken: credentials.bggToken, anthropicKey: credentials.anthropicKey, openaiKey: credentials.openaiKey });
+  await chrome.storage.session.set({ bggToken: credentials.bggToken, anthropicKey: credentials.anthropicKey, openaiKey: credentials.openaiKey, geminiKey: credentials.geminiKey || '' });
   if (credentials.remember) {
     await chrome.storage.local.set({ bggToken: credentials.bggToken, rememberCredentials: true });
   } else {
