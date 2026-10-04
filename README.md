@@ -106,7 +106,7 @@ The extension limits host access to:
 - `https://api.openai.com/*`
 - `https://generativelanguage.googleapis.com/*`
 
-Requests validate HTTP responses and XML, use timeouts, retry only genuinely temporary failures (`202`, `429`, and server errors) with backoff, and support user cancellation. A rejected request, such as an unknown model ID, fails immediately instead of being repeated. The BGG client adds a delay between thread requests to reduce request pressure.
+Requests validate HTTP responses and XML, use timeouts, retry only genuinely temporary failures (`202`, `429`, and server errors) with backoff, and support user cancellation. A rejected request, such as an unknown model ID, fails immediately instead of being repeated. On an AI rate limit (`429`) the extension waits as long as the provider asks (Gemini's `RetryInfo` or a `Retry-After` header, otherwise 10, 20, then 40 seconds) and shows the countdown in the progress line; if the provider asks for more than two minutes, as with a daily quota, it stops at once with the provider's message and keeps the finished parts for **Resume generation**. Gemini's free tier has low per-minute token limits, so expect these pauses there. The BGG client adds a delay between thread requests to reduce request pressure.
 
 The provider and model pickers offer Claude (`claude-opus-5` by default,
 `claude-sonnet-5`, and `claude-haiku-4-5`), OpenAI (`gpt-5.6-terra` by

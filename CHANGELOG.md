@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed AI rate limits exhausting every retry inside the same minute: a `429` now
+  waits the delay the provider asks for (Gemini `RetryInfo`, `Retry-After`), shows
+  it in the progress line, stays cancellable, and fails at once with the provider's
+  message when the wait exceeds two minutes (daily quota).
 - Added Gemini as a third provider: a session-only Gemini API key in Settings,
   Gemini 3.8 Flash (default), 3.1 Pro preview, and 3.5 Flash-Lite with pricing,
   and the `generateContent` API with the key sent in a header. Thinking tokens

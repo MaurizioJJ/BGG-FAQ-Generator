@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
+import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, serverRetryDelayMs, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
 import { faqMarkdown, importFaqMarkdown, datasetText, filenames } from '../src/exports.js';
 import { approximateTokens, escapeHtml, slug, uniqueCsv } from '../src/utils.js';
 
@@ -187,6 +187,40 @@ test('a Gemini safety block fails once instead of retrying', async () => {
     await assert.rejects(generateFaq({ dataset, provider: 'gemini', apiKey: 'k', model: 'gemini-3.8-flash' }), /Google declined/);
     assert.equal(stub.calls.length, 1);
   } finally { stub.restore(); }
+});
+
+const rateLimited = retryDelay => new Response(JSON.stringify({ error: {
+  code: 429, message: 'Quota exceeded for input tokens per minute.',
+  details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }]
+} }), { status: 429 });
+const geminiOk = () => new Response(JSON.stringify({
+  candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)' }] } }],
+  usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 10 }
+}), { status: 200 });
+
+test('a 429 waits the delay the server asks for, then retries', async () => {
+  const stub = stubFetch(count => count === 1 ? rateLimited('0s') : geminiOk());
+  const progress = [];
+  try {
+    const faq = await generateFaq({ dataset, provider: 'gemini', apiKey: 'k', model: 'gemini-3.8-flash', onProgress: (_, __, label) => progress.push(label) });
+    assert.equal(stub.calls.length, 2);
+    assert.ok(progress.includes('Rate limit reached; retrying in 1s'));
+    assert.match(faq.text, /Two points/);
+  } finally { stub.restore(); }
+});
+
+test('a 429 asking for a long wait fails at once with the server message', async () => {
+  const stub = stubFetch(() => rateLimited('3600s'));
+  try {
+    await assert.rejects(generateFaq({ dataset, provider: 'gemini', apiKey: 'k', model: 'gemini-3.8-flash' }), /Quota exceeded/);
+    assert.equal(stub.calls.length, 1);
+  } finally { stub.restore(); }
+});
+
+test('the retry delay is read from RetryInfo or Retry-After', () => {
+  assert.equal(serverRetryDelayMs(new Response('{}'), { error: { details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '37.2s' }] } }), 37200);
+  assert.equal(serverRetryDelayMs(new Response('{}', { headers: { 'retry-after': '20' } }), {}), 20000);
+  assert.equal(serverRetryDelayMs(new Response('{}'), {}), null);
 });
 
 test('each completed part is handed back for persistence before the next request', async () => {

@@ -9,6 +9,9 @@ const REDUCTION_BATCH = 6;
 // Typical, not worst-case: the ceiling (REDUCTION_BATCH x MAX_OUTPUT_TOKENS per
 // synthesis request) overstates cost by an order of magnitude on normal forums.
 const EXPECTED_OUTPUT_TOKENS = 4000;
+// Rate-limit waits longer than this are a daily or hard quota, not a
+// per-minute window, so waiting inside the side panel would not help.
+const MAX_RATE_LIMIT_WAIT_MS = 120000;
 // Used for custom model IDs, whose context window and pricing are unknown.
 const FALLBACK_CHUNK_TOKENS = 28000;
 
@@ -172,7 +175,22 @@ const API = {
   }
 };
 
-async function sendMessage({ provider, apiKey, model, prompt, signal, retries = 3 }) {
+/** How long the server asked us to wait, from Gemini's RetryInfo or a Retry-After header. */
+export function serverRetryDelayMs(response, data) {
+  const info = data?.error?.details?.find(detail => String(detail['@type'] || '').endsWith('RetryInfo'));
+  const seconds = info?.retryDelay ? parseFloat(info.retryDelay) : parseFloat(response.headers?.get?.('retry-after'));
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1000) : null;
+}
+
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve(); }, ms);
+    const cancel = () => { clearTimeout(timer); reject(final('FAQ generation cancelled.')); };
+    if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel, { once: true });
+  });
+}
+
+async function sendMessage({ provider, apiKey, model, prompt, signal, onWait, retries = 3 }) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -188,9 +206,19 @@ async function sendMessage({ provider, apiKey, model, prompt, signal, retries = 
       });
       const data = await response.json().catch(() => ({}));
       if (response.status === 401 || response.status === 403) throw final(`${providerName} rejected the API key.`);
-      if (response.status === 429 || response.status >= 500) {
+      if (response.status === 429) {
+        const message = data.error?.message || `${providerName} rate limit reached (HTTP 429).`;
+        const asked = serverRetryDelayMs(response, data);
+        if (attempt === retries || asked > MAX_RATE_LIMIT_WAIT_MS) throw final(message);
+        // Per-minute quotas only reset after the window, so short backoff just
+        // burns every retry inside the same minute. Honor the server's hint.
+        const delay = asked !== null ? asked + 1000 : Math.min((2 ** attempt) * 10000, 60000);
+        onWait?.(Math.ceil(delay / 1000));
+        await wait(delay, signal); continue;
+      }
+      if (response.status >= 500) {
         if (attempt === retries) throw new Error(data.error?.message || `${providerName} request failed (HTTP ${response.status}).`);
-        await sleep(Math.min((2 ** attempt) * 1500, 12000)); continue;
+        await wait(Math.min((2 ** attempt) * 1500, 12000), signal); continue;
       }
       // A 4xx other than 429 means the request itself is wrong (bad model ID,
       // malformed body). Retrying it just repeats the same failure.
@@ -258,9 +286,10 @@ export async function generateFaq({ dataset, provider = DEFAULT_PROVIDER, apiKey
   const usage = { input_tokens: 0, output_tokens: 0 };
   const totalRequests = chunks.length + reductionRequests(chunks.length);
   let completedRequests = parts.length;
+  const onWait = seconds => onProgress?.(completedRequests, totalRequests, `Rate limit reached; retrying in ${seconds}s`);
   for (let index = parts.length; index < chunks.length; index++) {
     onProgress?.(completedRequests, totalRequests, `Analyzing source group ${index + 1}/${chunks.length}`);
-    const result = await sendMessage({ provider, apiKey, model, signal, prompt: extractionPrompt(dataset, chunks[index], index, chunks.length, focus) });
+    const result = await sendMessage({ provider, apiKey, model, signal, onWait, prompt: extractionPrompt(dataset, chunks[index], index, chunks.length, focus) });
     parts.push(result.text);
     usage.input_tokens += result.usage.input_tokens || 0; usage.output_tokens += result.usage.output_tokens || 0;
     completedRequests++;
@@ -272,7 +301,7 @@ export async function generateFaq({ dataset, provider = DEFAULT_PROVIDER, apiKey
     const next = [];
     for (let index = 0; index < level.length; index += REDUCTION_BATCH) {
       onProgress?.(completedRequests, totalRequests, 'Consolidating and checking citations');
-      const result = await sendMessage({ provider, apiKey, model, signal, prompt: synthesisPrompt(dataset, level.slice(index, index + REDUCTION_BATCH), focus) });
+      const result = await sendMessage({ provider, apiKey, model, signal, onWait, prompt: synthesisPrompt(dataset, level.slice(index, index + REDUCTION_BATCH), focus) });
       next.push(result.text); usage.input_tokens += result.usage.input_tokens || 0; usage.output_tokens += result.usage.output_tokens || 0; completedRequests++;
     }
     level = next;
