@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Gemini 429s that waiting cannot fix (a daily quota, or a per-minute token
+  quota smaller than the request) now stop at once with the quota name and
+  limit, instead of retrying on Google's misleading ~40 s retry hint.
 - Added an opt-in **Remember my AI API keys** setting so keys survive Chrome
   restarts. Off by default; when off, any key copy on disk is purged on load.
 - Fixed AI rate limits exhausting every retry inside the same minute: a `429` now

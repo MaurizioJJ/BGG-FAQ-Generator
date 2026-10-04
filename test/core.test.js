@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, serverRetryDelayMs, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
+import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, serverRetryDelayMs, quotaProblem, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
 import { faqMarkdown, importFaqMarkdown, datasetText, filenames } from '../src/exports.js';
 import { approximateTokens, escapeHtml, slug, uniqueCsv } from '../src/utils.js';
 
@@ -215,6 +215,26 @@ test('a 429 asking for a long wait fails at once with the server message', async
     await assert.rejects(generateFaq({ dataset, provider: 'gemini', apiKey: 'k', model: 'gemini-3.8-flash' }), /Quota exceeded/);
     assert.equal(stub.calls.length, 1);
   } finally { stub.restore(); }
+});
+
+const quotaError = (quotaId, quotaValue, retryDelay = '40s') => ({ error: { code: 429, message: 'Quota exceeded.', details: [
+  { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaMetric: 'generativelanguage.googleapis.com/x', quotaId, quotaValue }] },
+  { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }
+] } });
+
+test('a daily Gemini quota stops at once even though RetryInfo says ~40s', async () => {
+  const stub = stubFetch(() => new Response(JSON.stringify(quotaError('GenerateRequestsPerDayPerProjectPerModel-FreeTier', '20')), { status: 429 }));
+  try {
+    await assert.rejects(generateFaq({ dataset, provider: 'gemini', apiKey: 'k', model: 'gemini-3.8-flash' }), /Google: Daily quota reached .*limit 20/);
+    assert.equal(stub.calls.length, 1);
+  } finally { stub.restore(); }
+});
+
+test('a request larger than the per-minute token quota is reported, not retried', () => {
+  const data = quotaError('GenerateContentInputTokensPerModelPerMinute-FreeTier', '50000');
+  assert.match(quotaProblem(data, 90000), /about 90000 tokens .* limit is 50000/);
+  assert.equal(quotaProblem(data, 30000), null);
+  assert.equal(quotaProblem({}, 90000), null);
 });
 
 test('the retry delay is read from RetryInfo or Retry-After', () => {

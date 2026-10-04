@@ -182,6 +182,26 @@ export function serverRetryDelayMs(response, data) {
   return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1000) : null;
 }
 
+/**
+ * Gemini names the exhausted quota in a QuotaFailure detail. Its RetryInfo
+ * says "retry in ~40s" even for a daily quota, so the quota id decides whether
+ * waiting can help at all.
+ */
+export function quotaProblem(data, promptTokens = 0) {
+  const violations = data?.error?.details?.find(detail => String(detail['@type'] || '').endsWith('QuotaFailure'))?.violations || [];
+  for (const violation of violations) {
+    const id = String(violation.quotaId || violation.quotaMetric || '');
+    const limit = Number(violation.quotaValue) || null;
+    if (/PerDay/i.test(id)) {
+      return `Daily quota reached (${id}${limit ? `, limit ${limit}` : ''}). Resume generation after the quota resets, or enable billing for this API key.`;
+    }
+    if (/token/i.test(id) && limit && promptTokens > limit) {
+      return `This request needs about ${promptTokens} tokens but the per-minute limit is ${limit} (${id}), so waiting cannot help. Enable billing or use a model with a higher limit.`;
+    }
+  }
+  return null;
+}
+
 function wait(ms, signal) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve(); }, ms);
@@ -208,6 +228,8 @@ async function sendMessage({ provider, apiKey, model, prompt, signal, onWait, re
       if (response.status === 401 || response.status === 403) throw final(`${providerName} rejected the API key.`);
       if (response.status === 429) {
         const message = data.error?.message || `${providerName} rate limit reached (HTTP 429).`;
+        const hopeless = quotaProblem(data, approximateTokens(prompt));
+        if (hopeless) throw final(`${providerName}: ${hopeless}`);
         const asked = serverRetryDelayMs(response, data);
         if (attempt === retries || asked > MAX_RATE_LIMIT_WAIT_MS) throw final(message);
         // Per-minute quotas only reset after the window, so short backoff just
