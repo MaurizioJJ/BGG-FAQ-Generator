@@ -16,7 +16,7 @@ BGG FAQ Generator is an independent, non-commercial utility. It is not affiliate
 - Export thread data as text or JSON and FAQs as Markdown or printable HTML.
 - Reopen an exported Markdown FAQ, which carries its own source dataset inside the file.
 - Back up and restore the entire local library.
-- Keep billable AI API keys session-only; optionally remember only the BGG token in the Chrome profile.
+- Keep billable AI API keys session-only by default; optionally remember the BGG token, the AI keys, or both in the Chrome profile.
 
 ## Requirements
 
@@ -90,8 +90,9 @@ a time. It never loads automatically and does not replace existing datasets.
 ## Privacy and credentials
 
 - No analytics, telemetry, advertising, or project-operated server is included.
-- AI API keys use `chrome.storage.session` and are cleared when the extension reloads, is disabled, updated, or Chrome restarts.
-- Enabling **Remember my BGG token** stores only that token in `chrome.storage.local` in the Chrome profile.
+- By default AI API keys use `chrome.storage.session` and are cleared when the extension reloads, is disabled, updated, or Chrome restarts.
+- Enabling **Remember my BGG token** stores that token in `chrome.storage.local` in the Chrome profile.
+- Enabling **Remember my AI API keys** stores the Anthropic, OpenAI, and Gemini keys unencrypted in `chrome.storage.local`, so anyone with access to the profile can read them and spend against them. Turning it off, or **Clear credentials**, deletes them from disk.
 - BGG forum content is sent only to the selected provider after the user confirms FAQ generation.
 - Complete datasets and checkpoints are stored locally in IndexedDB.
 

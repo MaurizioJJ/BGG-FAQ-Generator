@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an opt-in **Remember my AI API keys** setting so keys survive Chrome
+  restarts. Off by default; when off, any key copy on disk is purged on load.
 - Fixed AI rate limits exhausting every retry inside the same minute: a `429` now
   waits the delay the provider asks for (Gemini `RetryInfo`, `Retry-After`), shows
   it in the progress line, stays cancellable, and fails at once with the provider's

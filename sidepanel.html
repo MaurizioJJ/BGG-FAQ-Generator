@@ -137,8 +137,9 @@
         <label>OpenAI API key<input id="openai-key" type="password" autocomplete="off" placeholder="sk-…"></label>
         <label>Gemini API key<input id="gemini-key" type="password" autocomplete="off" placeholder="AIza…"></label>
         <label><input id="remember-credentials" type="checkbox"> Remember my BGG token after Chrome restarts</label>
+        <label><input id="remember-ai-keys" type="checkbox"> Remember my AI API keys after Chrome restarts</label>
         <div class="button-row"><button id="save-settings" class="primary">Save</button><button id="clear-settings" class="danger">Clear credentials</button></div>
-        <p class="muted">AI API keys are always session-only: they are cleared when the extension reloads, is disabled, updated, or Chrome restarts, and are never written to disk. Remembering the BGG token stores it unencrypted in the local Chrome profile.</p>
+        <p class="muted">Unless you choose to remember them, AI API keys are session-only: they are cleared when the extension reloads, is disabled, updated, or Chrome restarts, and are never written to disk. Remembering a token or key stores it unencrypted in the local Chrome profile, where anyone with access to this profile can read it and spend against a billable key.</p>
       </div>
       <div class="card">
         <h2>Data and compliance</h2>

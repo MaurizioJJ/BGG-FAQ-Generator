@@ -47,43 +47,53 @@ export const datasets = {
 };
 
 // The BGG token is a low-value forum session id, so remembering it across
-// restarts is fine. AI API keys are billable secrets and
-// chrome.storage.local is plaintext on disk in the Chrome profile, so the key
-// lives in session storage only, whatever the remember setting says.
-const LOCAL_KEYS = ['rememberCredentials', 'bggToken'];
-const SESSION_KEYS = ['bggToken', 'anthropicKey', 'openaiKey', 'geminiKey'];
-// Written by versions before the key was made session-only; purged on every load.
-const LEGACY_LOCAL_KEYS = ['anthropicKey', 'openaiKey'];
+// restarts is fine. AI API keys are billable secrets and chrome.storage.local
+// is plaintext on disk in the Chrome profile, so they persist only when the
+// owner opts in separately; otherwise they live in session storage and any
+// copy on disk is purged on load.
+const AI_KEYS = ['anthropicKey', 'openaiKey', 'geminiKey'];
+const LOCAL_KEYS = ['rememberCredentials', 'rememberAiKeys', 'bggToken', ...AI_KEYS];
+const SESSION_KEYS = ['bggToken', ...AI_KEYS];
 
 export async function loadCredentials() {
-  await chrome.storage.local.remove(LEGACY_LOCAL_KEYS);
   const [local, session] = await Promise.all([
     chrome.storage.local.get(LOCAL_KEYS),
     chrome.storage.session.get(SESSION_KEYS)
   ]);
   const remember = Boolean(local.rememberCredentials);
+  const rememberAiKeys = Boolean(local.rememberAiKeys);
+  if (!rememberAiKeys) await chrome.storage.local.remove(AI_KEYS);
+  const aiSource = rememberAiKeys ? local : session;
   return {
     bggToken: (remember ? local.bggToken : session.bggToken) || '',
-    anthropicKey: session.anthropicKey || '',
-    openaiKey: session.openaiKey || '',
-    geminiKey: session.geminiKey || '',
-    remember
+    anthropicKey: aiSource.anthropicKey || '',
+    openaiKey: aiSource.openaiKey || '',
+    geminiKey: aiSource.geminiKey || '',
+    remember,
+    rememberAiKeys
   };
 }
 
 export async function saveCredentials(credentials) {
-  await chrome.storage.session.set({ bggToken: credentials.bggToken, anthropicKey: credentials.anthropicKey, openaiKey: credentials.openaiKey, geminiKey: credentials.geminiKey || '' });
+  const aiKeys = { anthropicKey: credentials.anthropicKey || '', openaiKey: credentials.openaiKey || '', geminiKey: credentials.geminiKey || '' };
+  await chrome.storage.session.set({ bggToken: credentials.bggToken, ...aiKeys });
   if (credentials.remember) {
     await chrome.storage.local.set({ bggToken: credentials.bggToken, rememberCredentials: true });
   } else {
     await chrome.storage.local.remove(['bggToken']);
     await chrome.storage.local.set({ rememberCredentials: false });
   }
+  if (credentials.rememberAiKeys) {
+    await chrome.storage.local.set({ ...aiKeys, rememberAiKeys: true });
+  } else {
+    await chrome.storage.local.remove(AI_KEYS);
+    await chrome.storage.local.set({ rememberAiKeys: false });
+  }
 }
 
 export async function clearCredentials() {
   await Promise.all([
-    chrome.storage.local.remove([...LOCAL_KEYS, ...LEGACY_LOCAL_KEYS]),
+    chrome.storage.local.remove(LOCAL_KEYS),
     chrome.storage.session.remove(SESSION_KEYS)
   ]);
 }

@@ -252,7 +252,7 @@ test('saved parts are reused instead of re-requested when resuming', async () =>
   } finally { stub.restore(); }
 });
 
-test('billable AI keys remain session-only even when the BGG token is remembered', async () => {
+test('billable AI keys remain session-only unless separately opted in', async () => {
   const local = {};
   const session = {};
   const area = values => ({
@@ -265,8 +265,36 @@ test('billable AI keys remain session-only even when the BGG token is remembered
   try {
     const { saveCredentials, loadCredentials } = await import(`../src/storage.js?test=${Date.now()}`);
     await saveCredentials({ bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem', remember: true });
-    assert.deepEqual(local, { bggToken: 'bgg', rememberCredentials: true });
+    assert.deepEqual(local, { bggToken: 'bgg', rememberCredentials: true, rememberAiKeys: false });
     assert.deepEqual(session, { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem' });
-    assert.deepEqual(await loadCredentials(), { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem', remember: true });
+    assert.deepEqual(await loadCredentials(), { bggToken: 'bgg', anthropicKey: 'ant', openaiKey: 'oai', geminiKey: 'gem', remember: true, rememberAiKeys: false });
+    // A key left on disk by an older version is purged when not opted in.
+    local.openaiKey = 'stale';
+    await loadCredentials();
+    assert.ok(!('openaiKey' in local));
+  } finally { globalThis.chrome = originalChrome; }
+});
+
+test('AI keys survive a Chrome restart only when the owner opts in', async () => {
+  const local = {};
+  let session = {};
+  const area = values => ({
+    get: async keys => Object.fromEntries(keys.filter(key => key in values).map(key => [key, values[key]])),
+    set: async entries => Object.assign(values, entries),
+    remove: async keys => { for (const key of keys) delete values[key]; }
+  });
+  const originalChrome = globalThis.chrome;
+  globalThis.chrome = { storage: { local: area(local), session: area(session) } };
+  try {
+    const { saveCredentials, loadCredentials, clearCredentials } = await import(`../src/storage.js?test=optin${Date.now()}`);
+    await saveCredentials({ bggToken: 'bgg', anthropicKey: 'ant', openaiKey: '', geminiKey: 'gem', remember: false, rememberAiKeys: true });
+    session = {}; globalThis.chrome.storage.session = area(session); // simulate a restart
+    const loaded = await loadCredentials();
+    assert.equal(loaded.geminiKey, 'gem');
+    assert.equal(loaded.anthropicKey, 'ant');
+    assert.equal(loaded.bggToken, '');
+    assert.equal(loaded.rememberAiKeys, true);
+    await clearCredentials();
+    assert.deepEqual(local, {});
   } finally { globalThis.chrome = originalChrome; }
 });

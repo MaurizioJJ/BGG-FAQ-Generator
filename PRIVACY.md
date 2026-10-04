@@ -4,7 +4,7 @@ BGG FAQ Generator v2 does not include analytics, advertising, telemetry, or an a
 
 ## Data stored in Chrome
 
-Complete scrape datasets, FAQ output, progress checkpoints, and settings are stored locally in the extension's browser storage. Anthropic, OpenAI, and Gemini API keys are stored only in memory-backed `chrome.storage.session`. If **Remember my BGG token** is enabled, only the BGG application token is stored in `chrome.storage.local` in the Chrome profile.
+Complete scrape datasets, FAQ output, progress checkpoints, and settings are stored locally in the extension's browser storage. Anthropic, OpenAI, and Gemini API keys are stored in memory-backed `chrome.storage.session` unless **Remember my AI API keys** is enabled, in which case they are also stored unencrypted in `chrome.storage.local` in the Chrome profile. If **Remember my BGG token** is enabled, the BGG application token is stored there too. Disabling either option or choosing **Clear credentials** removes the stored values.
 
 Anyone with access to an unlocked browser profile or its extension debugging tools may be able to inspect locally stored data. Clear credentials before sharing a browser profile.
 

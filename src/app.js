@@ -439,14 +439,14 @@ function bindEvents() {
   $('refresh-library').addEventListener('click', renderLibrary);
   $('export-library').addEventListener('click', async () => { const backup = await exportBackup(); download(JSON.stringify(backup, null, 2), `bgg-faq-backup-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); });
   $('import-library').addEventListener('change', async event => { try { const text = await readFile(event.target); if (!text) return; const count = await importBackup(JSON.parse(text)); await renderLibrary(); toast(`Restored ${count} dataset(s).`); } catch (error) { toast(errorMessage(error)); } });
-  $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), openaiKey: $('openai-key').value.trim(), geminiKey: $('gemini-key').value.trim(), remember: $('remember-credentials').checked }); toast('Credentials saved.'); });
-  $('clear-settings').addEventListener('click', async () => { await clearCredentials(); $('bgg-token').value = ''; $('anthropic-key').value = ''; $('openai-key').value = ''; $('gemini-key').value = ''; $('remember-credentials').checked = false; toast('Credentials cleared.'); });
+  $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), openaiKey: $('openai-key').value.trim(), geminiKey: $('gemini-key').value.trim(), remember: $('remember-credentials').checked, rememberAiKeys: $('remember-ai-keys').checked }); toast('Credentials saved.'); });
+  $('clear-settings').addEventListener('click', async () => { await clearCredentials(); $('bgg-token').value = ''; $('anthropic-key').value = ''; $('openai-key').value = ''; $('gemini-key').value = ''; $('remember-credentials').checked = false; $('remember-ai-keys').checked = false; toast('Credentials cleared.'); });
 }
 
 async function init() {
   setChildren($('provider-select'), ...PROVIDERS.map(provider => element('option', { text: provider.label, attrs: { value: provider.id } })));
   $('provider-select').value = DEFAULT_PROVIDER; populateModels(); bindEvents();
-  const saved = await loadCredentials(); $('bgg-token').value = saved.bggToken; $('anthropic-key').value = saved.anthropicKey; $('openai-key').value = saved.openaiKey; $('gemini-key').value = saved.geminiKey; $('remember-credentials').checked = saved.remember;
+  const saved = await loadCredentials(); $('bgg-token').value = saved.bggToken; $('anthropic-key').value = saved.anthropicKey; $('openai-key').value = saved.openaiKey; $('gemini-key').value = saved.geminiKey; $('remember-credentials').checked = saved.remember; $('remember-ai-keys').checked = saved.rememberAiKeys;
   const all = await datasets.all(); state.activeDataset = all.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0] || null;
   renderFaqSource(); renderLibrary(); setStatus('Ready', 'success');
 }
