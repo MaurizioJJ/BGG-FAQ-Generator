@@ -1,21 +1,35 @@
-import { searchGames, getForums, getForumThreads, getThread } from './bgg-api.js';
+import { searchGames, getForums, getExpansions, getForumThreads, getThread } from './bgg-api.js';
 import { datasets, loadCredentials, saveCredentials, clearCredentials, exportBackup, importBackup } from './storage.js';
 import { PROVIDERS, DEFAULT_PROVIDER, providerInfo, DEFAULT_MODELS, modelsFor, usageCost, estimateGeneration, generationPlan, generateFaq } from './anthropic-api.js';
 import { faqMarkdown, faqHtml, importFaqMarkdown, datasetJson, datasetText, filenames } from './exports.js';
-import { download, element, formatDuration, safeDate, setChildren, uniqueCsv } from './utils.js';
+import { datasetForExpansions } from './faq-source.js';
+import { download as saveDownload, element, formatDuration, safeDate, setChildren, uniqueCsv } from './utils.js';
 
 const $ = id => document.getElementById(id);
 const LOG_LINE_LIMIT = 200;
 const state = {
-  game: null, forum: null, threadMeta: [], prepared: [], activeDataset: null,
+  game: null, forum: null, expansions: [], selectedExpansions: [], threadMeta: [], prepared: [], activeDataset: null,
   scrapeController: null, faqController: null, logLines: [], faqError: ''
 };
+let faqExpansionLoad = null;
+let faqExpansionDatasetId = null;
+let updateExpansionLoad = null;
 
 function setStatus(text, type = 'neutral') { $('global-status').textContent = text; $('global-status').className = `status ${type}`; }
 function show(id, visible = true) { $(id).classList.toggle('hidden', !visible); }
 function bar(id, current, total) { $(id).firstElementChild.style.width = `${total ? Math.min(100, current / total * 100) : 0}%`; }
 function toast(message) { $('toast').textContent = message; show('toast'); setTimeout(() => show('toast', false), 4000); }
 function errorMessage(error) { return error?.message || String(error); }
+
+async function download(content, filename, type) {
+  try {
+    await saveDownload(content, filename, type);
+    toast(`Download started: ${filename}. Check Chrome Downloads for completion.`);
+  } catch (error) {
+    setStatus('Download failed', 'error');
+    toast(`Could not save file: ${errorMessage(error)}`);
+  }
+}
 
 function log(message) {
   state.logLines.push(`[${new Date().toLocaleTimeString()}] ${message}`);
@@ -91,13 +105,28 @@ async function search() {
 }
 
 async function chooseGame(game, button) {
-  state.game = game; state.forum = null; state.threadMeta = []; state.prepared = [];
+  state.game = game; state.forum = null; state.expansions = []; state.selectedExpansions = []; state.threadMeta = []; state.prepared = [];
+  $('scrape-mode').value = 'full'; $('include-update-expansions').checked = false; show('update-expansion-refresh', false);
   selectResult($('search-results'), button);
   collapseStep('search-card', 'search-summary', `${game.name}${game.year ? ` (${game.year})` : ''}`);
-  expandStep('forum-card', 'forum-summary'); show('forum-card'); show('options-card', false); resetScrapeSurfaces();
+  show('forum-card', false); show('options-card', false); resetScrapeSurfaces();
+  show('expansion-card'); setChildren($('expansion-results'), element('p', { className: 'muted', text: 'Checking for expansions…' }));
+  try {
+    const { bggToken } = await credentials(); state.expansions = await getExpansions(game.id, bggToken);
+    const nodes = state.expansions.map(expansion => {
+      const label = element('label', { className: 'result expansion-choice' }, element('input', { attrs: { type: 'checkbox', value: expansion.id } }), element('span', { text: expansion.name }));
+      return label;
+    });
+    setChildren($('expansion-results'), ...(nodes.length ? nodes : [element('p', { className: 'muted', text: 'No expansions listed on BGG.' })]));
+  } catch (error) { setChildren($('expansion-results'), element('p', { className: 'notice error', text: errorMessage(error) })); }
+}
+
+async function continueExpansions() {
+  state.selectedExpansions = state.expansions.filter(expansion => $('expansion-results').querySelector(`input[value="${CSS.escape(expansion.id)}"]`)?.checked);
+  show('expansion-card', false); expandStep('forum-card', 'forum-summary'); show('forum-card');
   setChildren($('forum-results'), element('p', { className: 'muted', text: 'Loading forums…' }));
   try {
-    const { bggToken } = await credentials(); const forums = await getForums(game.id, bggToken);
+    const { bggToken } = await credentials(); const forums = await getForums(state.game.id, bggToken);
     const nodes = forums.map(forum => {
       const buttonNode = element('button', { className: 'result' }, element('span', {}, element('strong', { text: forum.title }), element('small', { text: `${forum.numThreads} threads` })));
       buttonNode.addEventListener('click', () => chooseForum(forum, buttonNode)); return buttonNode;
@@ -123,6 +152,29 @@ function currentFilters() {
   };
 }
 
+function scrapeExpansions() {
+  return $('scrape-mode').value === 'update' && !$('include-update-expansions').checked ? [] : state.selectedExpansions;
+}
+
+async function loadUpdateExpansionChoices() {
+  if (updateExpansionLoad) return updateExpansionLoad;
+  updateExpansionLoad = (async () => {
+    try {
+      const { bggToken } = await credentials();
+      state.expansions = await getExpansions(state.game.id, bggToken);
+      const selectedIds = new Set(state.selectedExpansions.map(item => item.id));
+      const choices = state.expansions.map(expansion => element('label', { className: 'result expansion-choice' },
+        element('input', { attrs: { type: 'checkbox', value: expansion.id, ...(selectedIds.has(expansion.id) ? { checked: 'checked' } : {}) } }),
+        element('span', { text: expansion.name })));
+      setChildren($('update-expansion-choices'), ...(choices.length ? choices : [element('p', { className: 'muted', text: 'BGG lists no expansions for this game.' })]));
+      $('update-expansion-choices').querySelectorAll('input').forEach(input => input.addEventListener('change', () => {
+        state.selectedExpansions = state.expansions.filter(expansion => $('update-expansion-choices').querySelector(`input[value="${CSS.escape(expansion.id)}"]`)?.checked);
+      }));
+    } catch (error) { setChildren($('update-expansion-choices'), element('p', { className: 'notice error', text: errorMessage(error) })); }
+  })().finally(() => { updateExpansionLoad = null; });
+  return updateExpansionLoad;
+}
+
 function applyFilters(items, filters) {
   let result = [...items];
   if (filters.dateFrom) {
@@ -140,11 +192,24 @@ async function prepareScrape() {
   try {
     setStatus('Loading forum…'); $('prepare-button').disabled = true; $('scrape-button').disabled = true; resetScrapeSurfaces();
     const { bggToken } = await credentials();
-    state.threadMeta = await getForumThreads(state.forum.id, bggToken, count => { $('scrape-estimate').textContent = `Loaded ${count} thread summaries…`; });
-    const filters = currentFilters(); let prepared = applyFilters(state.threadMeta, filters);
+    const expansions = scrapeExpansions();
+    const targets = [{ game: state.game, forum: state.forum, expansion: false }, ...await Promise.all(expansions.map(async expansion => {
+      const forums = await getForums(expansion.id, bggToken);
+      const forum = forums.find(item => item.title === state.forum.title);
+      if (!forum) throw new Error(`Expansion “${expansion.name}” has no “${state.forum.title}” forum; choose another forum.`);
+      return { game: expansion, forum, expansion: true };
+    }))];
+    const allMeta = [];
+    for (const target of targets) {
+      const items = await getForumThreads(target.forum.id, bggToken, count => { $('scrape-estimate').textContent = `Loaded ${count} thread summaries for ${target.game.name}…`; });
+      allMeta.push(...items.map(item => ({ ...item, component: target.expansion ? target.game : null })));
+    }
+    state.threadMeta = allMeta;
+    const filters = currentFilters(); let prepared = applyFilters(allMeta, filters);
     const id = `${state.game.id}-${state.forum.id}`; const saved = await datasets.get(id);
     if ($('scrape-mode').value === 'update' && saved) {
-      const existing = new Set(saved.threads.map(thread => thread.id)); prepared = prepared.filter(thread => !existing.has(thread.id));
+      const existing = new Set(saved.threads.map(thread => `${thread.component?.id || state.game.id}:${thread.id}`));
+      prepared = prepared.filter(thread => !existing.has(`${thread.component?.id || state.game.id}:${thread.id}`));
     }
     state.prepared = prepared;
     const estimate = formatDuration(prepared.length * 1.5);
@@ -158,7 +223,7 @@ async function prepareScrape() {
 function confirmScrape() {
   setChildren($('confirm-details'),
     element('p', { text: `${state.game.name} — ${state.forum.title}` }),
-    element('p', { text: `${state.prepared.length} threads will be fetched. Existing progress will be preserved if the operation is interrupted.` })
+    element('p', { text: `${state.prepared.length} threads across ${1 + scrapeExpansions().length} game${scrapeExpansions().length ? 's' : ''} will be fetched. Existing progress will be preserved if the operation is interrupted.` })
   );
   $('confirm-dialog').showModal();
 }
@@ -203,7 +268,7 @@ async function startScrape() {
     const previous = $('scrape-mode').value === 'update' ? await datasets.get(id) : null;
     const existingThreads = previous?.threads || [];
     dataset = {
-      id, schemaVersion: 2, game: state.game, forum: state.forum,
+      id, schemaVersion: 2, game: state.game, forum: state.forum, expansions: scrapeExpansions(),
       threads: [...existingThreads], faq: previous?.faq || null, generation: previous?.generation || null,
       updatedAt: new Date().toISOString(),
       scrape: { status: 'running', startedAt: new Date().toISOString(), completedAt: null, filters, pendingIds: state.prepared.map(item => item.id), failures: [] }
@@ -269,9 +334,38 @@ function resumableParts(dataset, provider, model) {
   const saved = dataset?.generation;
   const savedProvider = saved?.provider || 'anthropic';
   if (!saved?.parts?.length || !model || saved.model !== model || savedProvider !== provider) return null;
-  const plan = generationPlan(dataset, model, provider);
+  const scoped = datasetForExpansions(dataset, saved.expansionIds || []);
+  const plan = generationPlan(scoped, model, provider);
   if (saved.chunkTotal !== plan.chunkTotal || saved.parts.length >= plan.chunkTotal) return null;
-  return { parts: saved.parts, chunkTotal: plan.chunkTotal, focus: saved.focus || '' };
+  return { parts: saved.parts, chunkTotal: plan.chunkTotal, focus: saved.focus || '', expansionIds: saved.expansionIds || [] };
+}
+
+function selectedFaqExpansionIds() {
+  return [...$('faq-expansion-choices').querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value);
+}
+
+async function loadFaqExpansionChoices() {
+  if (faqExpansionLoad) return faqExpansionLoad;
+  faqExpansionLoad = (async () => {
+    const dataset = state.activeDataset;
+    if (!dataset) return;
+    setChildren($('faq-expansion-choices'), element('p', { className: 'muted', text: 'Loading expansions…' }));
+    show('faq-expansion-choices');
+    try {
+      const { bggToken } = await credentials();
+      const expansions = await getExpansions(dataset.game.id, bggToken);
+      const savedIds = new Set(dataset.generation?.expansionIds || dataset.faq?.expansionIds || (dataset.expansions || []).map(item => item.id));
+      const choices = expansions.map(expansion => element('label', { className: 'result expansion-choice' },
+        element('input', { attrs: { type: 'checkbox', value: expansion.id, ...(savedIds.has(expansion.id) ? { checked: 'checked' } : {}) } }),
+        element('span', { text: expansion.name })));
+      setChildren($('faq-expansion-choices'), ...(choices.length ? choices : [element('p', { className: 'muted', text: 'BGG lists no expansions for this game.' })]));
+      $('faq-expansion-choices').querySelectorAll('input').forEach(input => input.addEventListener('change', renderFaqSource));
+      renderFaqSource();
+    } catch (error) {
+      setChildren($('faq-expansion-choices'), element('p', { className: 'notice error', text: errorMessage(error) }));
+    }
+  })().finally(() => { faqExpansionLoad = null; });
+  return faqExpansionLoad;
 }
 
 function renderFaqSource() {
@@ -280,20 +374,34 @@ function renderFaqSource() {
   show('faq-output-wrap', false); show('faq-downloads', false); show('faq-resume-row', false);
   if (!busy) { show('faq-progress-wrap', false); show('faq-result', false); }
   if (!dataset) {
+    show('faq-expansion-refresh', false); faqExpansionDatasetId = null;
     $('faq-source').textContent = 'Choose a dataset from the Library or finish a scrape.'; $('generate-button').disabled = true;
     $('cost-estimate').textContent = 'Select a dataset to estimate request size.'; return;
+  }
+  show('faq-expansion-refresh');
+  if (faqExpansionDatasetId !== dataset.id) {
+    faqExpansionDatasetId = dataset.id;
+    const savedExpansionIds = dataset.faq?.expansionIds || dataset.expansions?.map(item => item.id) || [];
+    $('include-faq-expansions').checked = savedExpansionIds.length > 0;
+    setChildren($('faq-expansion-choices'));
+    show('faq-expansion-choices', false);
+    if (savedExpansionIds.length) void loadFaqExpansionChoices();
   }
   const posts = dataset.threads.reduce((sum, thread) => sum + thread.posts.length, 0);
   $('faq-source').textContent = `${dataset.game.name} · ${dataset.forum.title} · ${dataset.threads.length} threads / ${posts} posts`;
 
   const model = selectedModel();
   const provider = selectedProvider();
-  const estimate = estimateGeneration(dataset.threads, model);
+  const estimateThreads = $('include-faq-expansions').checked
+    ? datasetForExpansions(dataset, selectedFaqExpansionIds()).threads
+    : dataset.threads.filter(thread => !thread.component?.id);
+  const estimate = estimateGeneration(estimateThreads, model);
   $('cost-estimate').textContent = `${estimate.requests} request(s) · about ${estimate.inputTokens.toLocaleString()} input and ${estimate.outputTokens.toLocaleString()} output tokens` +
     (estimate.estimatedUsd === null
       ? '. Cost unknown for a custom model ID.'
       : ` · roughly US$${estimate.estimatedUsd.toFixed(2)}. The actual cost is shown after generation.`);
   $('generate-button').disabled = busy || !$('ai-consent').checked || !dataset.threads.length;
+  $('generate-button').textContent = dataset.faq?.text ? 'Refresh FAQ' : 'Generate FAQ';
 
   if (busy) return;
 
@@ -338,14 +446,38 @@ async function runGeneration({ resume }) {
     if (resume && !saved) throw new Error('The saved parts no longer match this dataset and model.');
     const focus = resume ? saved.focus : $('faq-focus').value.trim();
     if (resume) $('faq-focus').value = focus;
+    const expansionIds = resume ? saved.expansionIds : ($('include-faq-expansions').checked ? selectedFaqExpansionIds() : []);
 
     state.faqController = new AbortController();
     show('cancel-faq'); show('faq-resume-row', false); show('faq-result', false);
     show('faq-output-wrap', false); show('faq-downloads', false); show('faq-progress-wrap');
     $('generate-button').disabled = true;
 
+    if (expansionIds.length) {
+      const { bggToken } = values;
+      const selected = [...$('faq-expansion-choices').querySelectorAll('input[type="checkbox"]')]
+        .filter(input => expansionIds.includes(input.value))
+        .map(input => ({ id: input.value, name: input.parentElement.textContent.trim() }));
+      for (const expansion of selected) {
+        const cached = dataset.threads.some(thread => thread.component?.id === expansion.id);
+        if (cached) continue;
+        setStatus(`Loading ${expansion.name} discussions…`);
+        const forums = await getForums(expansion.id, bggToken, state.faqController.signal);
+        const forum = forums.find(item => item.title === dataset.forum.title);
+        if (!forum) throw new Error(`Expansion “${expansion.name}” has no “${dataset.forum.title}” forum.`);
+        const summaries = await getForumThreads(forum.id, bggToken, undefined, state.faqController.signal);
+        for (const summary of summaries) {
+          const thread = await getThread(summary, bggToken, state.faqController.signal);
+          if (thread.posts.length) dataset.threads.push({ ...thread, component: expansion });
+        }
+      }
+      dataset.expansions = selected;
+      dataset.updatedAt = new Date().toISOString();
+      await datasets.put(dataset);
+    }
+    const generationDataset = datasetForExpansions(dataset, expansionIds);
     const faq = await generateFaq({
-      dataset, provider, apiKey, model, focus, signal: state.faqController.signal,
+      dataset: generationDataset, provider, apiKey, model, focus, signal: state.faqController.signal,
       startParts: saved?.parts || [],
       onProgress: (current, total, text) => {
         bar('faq-progress', current, total);
@@ -353,11 +485,11 @@ async function runGeneration({ resume }) {
         $('faq-stage').textContent = text; setStatus(text);
       },
       onPart: async (parts, meta) => {
-        dataset.generation = { ...meta, parts, updatedAt: new Date().toISOString() };
+        dataset.generation = { ...meta, parts, expansionIds, updatedAt: new Date().toISOString() };
         await datasets.put(dataset);
       }
     });
-    dataset.faq = faq; dataset.generation = null; dataset.updatedAt = new Date().toISOString();
+    dataset.faq = { ...faq, expansionIds }; dataset.generation = null; dataset.updatedAt = new Date().toISOString();
     await datasets.put(dataset);
     setStatus('FAQ ready', 'success');
   } catch (error) {
@@ -397,11 +529,14 @@ function libraryItem(dataset) {
 }
 
 function loadDatasetForUpdate(dataset) {
-  state.activeDataset = dataset; state.game = dataset.game; state.forum = dataset.forum; state.threadMeta = []; state.prepared = [];
+  state.activeDataset = dataset; state.game = dataset.game; state.forum = dataset.forum; state.selectedExpansions = dataset.expansions || []; state.threadMeta = []; state.prepared = [];
   $('search-query').value = dataset.game.name; $('scrape-mode').value = 'update';
   collapseStep('search-card', 'search-summary', dataset.game.name);
   collapseStep('forum-card', 'forum-summary', `${dataset.forum.title} · saved dataset`);
   show('forum-card'); show('options-card'); $('scrape-button').disabled = true; resetScrapeSurfaces();
+  $('include-update-expansions').checked = state.selectedExpansions.length > 0;
+  show('update-expansion-refresh'); show('update-expansion-choices', false); setChildren($('update-expansion-choices'));
+  if ($('include-update-expansions').checked) { show('update-expansion-choices'); void loadUpdateExpansionChoices(); }
   $('scrape-estimate').textContent = `${dataset.threads.length} saved threads. Select Preview scrape to find missing threads.`;
   activateTab('scrape'); reveal('options-card');
 }
@@ -416,6 +551,24 @@ async function readFile(input) { const file = input.files?.[0]; if (!file) retur
 function bindEvents() {
   document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => activateTab(tab.dataset.tab)));
   $('search-button').addEventListener('click', search); $('search-query').addEventListener('keydown', event => { if (event.key === 'Enter') search(); });
+  $('continue-expansions').addEventListener('click', continueExpansions);
+  $('scrape-mode').addEventListener('change', async () => {
+    const updateMode = $('scrape-mode').value === 'update';
+    show('update-expansion-refresh', updateMode && Boolean(state.activeDataset));
+    if (updateMode && $('include-update-expansions').checked) {
+      show('update-expansion-choices'); await loadUpdateExpansionChoices();
+    }
+  });
+  $('include-update-expansions').addEventListener('change', async () => {
+    if ($('include-update-expansions').checked) {
+      show('update-expansion-choices'); await loadUpdateExpansionChoices();
+    } else show('update-expansion-choices', false);
+  });
+  $('include-faq-expansions').addEventListener('change', async () => {
+    if ($('include-faq-expansions').checked) await loadFaqExpansionChoices();
+    else show('faq-expansion-choices', false);
+    renderFaqSource();
+  });
   $('edit-search').addEventListener('click', () => expandStep('search-card', 'search-summary'));
   $('edit-forum').addEventListener('click', () => expandStep('forum-card', 'forum-summary'));
   $('prepare-button').addEventListener('click', prepareScrape); $('scrape-button').addEventListener('click', confirmScrape);

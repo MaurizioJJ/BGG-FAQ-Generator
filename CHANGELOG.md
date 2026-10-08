@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 2.0.5 — 2026-10-07
+
+- Added the expansion toggle and picker to the saved-scrape update flow, where it is visible while updating an existing dataset. The header now shows the matching compact version, v2.05.
+
+
+## 2.0.4 — 2026-10-07
+
+- Added a toggle on the FAQ screen to refresh an existing FAQ with only the selected expansions. Expansion source threads remain saved for later refreshes, and interrupted generation resumes with the same selection.
+
+
+## 2.0.3 — 2026-10-07
+
+- Added an FAQ refresh option to include selected expansions. Their matching forum discussions are fetched or reused from the saved dataset, and each generation records its expansion selection for reliable resume.
+
+
+## 2.0.2 — 2026-10-07
+
+- Added optional expansion selection when choosing a game. Selected expansions are scraped from the same forum category and included as separately labeled FAQ sections; cross-game answers carry an expansion tag.
+
+
+## 2.0.1 — 2026-10-06
+
+- Fixed all exports using Chrome's native Save As dialog instead of a synthetic
+  link click. Added the downloads permission and visible download errors.
 - Gemini 429s that waiting cannot fix (a daily quota, or a per-minute token
   quota smaller than the request) now stop at once with the quota name and
   limit, instead of retrying on Google's misleading ~40 s retry hint.

@@ -27,13 +27,13 @@ export function escapeHtml(value) {
   })[char]);
 }
 
-export function download(content, filename, type) {
+export async function download(content, filename, type) {
   const url = URL.createObjectURL(new Blob([content], { type }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    return await chrome.downloads.download({ url, filename, saveAs: true });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function uniqueCsv(value) {

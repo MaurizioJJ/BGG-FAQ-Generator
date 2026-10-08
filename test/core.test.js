@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, serverRetryDelayMs, quotaProblem, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
 import { faqMarkdown, importFaqMarkdown, datasetText, filenames } from '../src/exports.js';
 import { approximateTokens, escapeHtml, slug, uniqueCsv } from '../src/utils.js';
+import { datasetForExpansions } from '../src/faq-source.js';
 
 const dataset = {
   id: '1-2', schemaVersion: 2, game: { id: '1', name: 'Test & Game', year: '2026' },
@@ -27,6 +28,34 @@ test('thread-aware chunking preserves source links', () => {
   assert.equal(chunks.length, 1);
   assert.match(chunks[0], /THREAD 3/);
   assert.match(chunks[0], /boardgamegeek\.com\/thread\/3#4/);
+});
+
+test('expansion source groups carry a short tag into FAQ generation', async () => {
+  const expansionDataset = structuredClone(dataset);
+  expansionDataset.threads[0].component = { id: '9', name: 'The Lost Kingdom' };
+  expansionDataset.expansions = [{ id: '9', name: 'The Lost Kingdom' }];
+  const chunks = buildChunks(expansionDataset.threads, 100);
+  assert.match(chunks[0], /^\[expansion the-lost-kingdom\] THREAD 3/);
+  const stub = stubFetch(() => okResponse());
+  try {
+    await generateFaq({ dataset: expansionDataset, apiKey: 'k', model: 'claude-opus-5' });
+    const prompt = stub.calls[0].messages[0].content;
+    assert.match(prompt, /Keep expansion answers distinct from base-game answers/);
+    assert.match(prompt, /separate ## section for each component/);
+    assert.match(prompt, /\[expansion short-name\]/);
+    assert.match(prompt, /\[expansion the-lost-kingdom\] = The Lost Kingdom/);
+  } finally { stub.restore(); }
+});
+
+test('FAQ refresh can include only the selected expansion source threads', () => {
+  const source = { ...structuredClone(dataset), threads: [
+    ...structuredClone(dataset.threads),
+    { ...structuredClone(dataset.threads[0]), id: 'exp-1', component: { id: '9', name: 'The Lost Kingdom' } },
+    { ...structuredClone(dataset.threads[0]), id: 'exp-2', component: { id: '10', name: 'The New Empire' } }
+  ] };
+  const filtered = datasetForExpansions(source, ['10']);
+  assert.deepEqual(filtered.threads.map(thread => thread.id), ['3', 'exp-2']);
+  assert.equal(source.threads.length, 3, 'filtering keeps the saved dataset and its other expansion sources intact');
 });
 
 test('an oversized post is divided into bounded continuations', () => {

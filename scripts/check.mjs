@@ -3,11 +3,12 @@ import { readFileSync } from 'node:fs';
 
 const files = [
   'background.js', 'src/app.js', 'src/anthropic-api.js', 'src/bgg-api.js',
-  'src/exports.js', 'src/storage.js', 'src/utils.js'
+  'src/exports.js', 'src/faq-source.js', 'src/storage.js', 'src/utils.js'
 ];
 for (const file of files) execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
 const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
-if (manifest.manifest_version !== 3 || manifest.version !== '2.0.0') throw new Error('Expected Manifest V3 version 2.0.0.');
+const packageInfo = JSON.parse(readFileSync('package.json', 'utf8'));
+if (manifest.manifest_version !== 3 || manifest.version !== packageInfo.version) throw new Error('Expected Manifest V3 with matching package and manifest versions.');
 if (!manifest.side_panel?.default_path) throw new Error('Missing side panel path.');
 const html = readFileSync('sidepanel.html', 'utf8');
 const app = readFileSync('src/app.js', 'utf8');

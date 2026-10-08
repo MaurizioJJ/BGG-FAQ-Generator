@@ -42,12 +42,17 @@ git clone <repository-url>
 
 After pulling a newer revision, select **Reload** on the extension card.
 
+After updating the download fix, reload the extension and reopen its side panel.
+Exports open Chrome's **Save As** dialog using the `downloads` permission.
+Your saved library and FAQs are preserved; do not remove the extension.
+If saving fails or is cancelled, the panel displays the error. Check
+`chrome://downloads` for completion or any interrupted downloads.
+
 ## Workflow
 
 ### Scrape
 
-1. Search for a game and select a forum. Each completed step collapses to a
-   summary line so the next one stays in view; **Change** reopens it.
+1. Search for a game, optionally select expansions, then choose a forum category. The same category is used for selected expansions. When updating a saved scrape, enable **Include expansions when updating this saved FAQ** and choose expansions in the options card. Each completed step collapses to a summary line so the next one stays in view; **Change** reopens it.
 2. Choose full or update mode and apply optional filters.
 3. Preview the request count and duration.
 4. Confirm the scrape. A pinned summary shows the thread counter, the thread being fetched, and the estimated time remaining; **Scrape details** expands the per-thread log.
@@ -57,9 +62,10 @@ After pulling a newer revision, select **Reload** on the extension card.
 
 1. Finish a scrape or select a dataset from **Library**.
 2. Choose a model and review the estimated request count and cost.
-3. Add optional focus instructions.
-4. Confirm the data-transfer notice and generate.
-5. Verify the result against its linked BGG sources and the official rulebook.
+3. Optionally enable **Include expansions when refreshing this FAQ** and select expansions. The extension fetches or reuses their discussions from the same forum category, and the FAQ lists each expansion in its own section.
+4. Add optional focus instructions.
+5. Confirm the data-transfer notice and generate or refresh.
+6. Verify the result against its linked BGG sources and the official rulebook.
 
 Each extraction request is saved to the dataset as it completes. If generation is
 cancelled, times out, or fails part-way, the finished parts are kept and the FAQ

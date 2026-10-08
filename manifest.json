@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "BGG FAQ Generator",
-  "version": "2.0.0",
+  "version": "2.0.5",
   "description": "Collect BGG forum discussions and create source-linked board game FAQs.",
   "minimum_chrome_version": "114",
-  "permissions": ["storage", "sidePanel"],
+  "permissions": ["storage", "sidePanel", "downloads"],
   "host_permissions": [
     "https://boardgamegeek.com/*",
     "https://api.anthropic.com/*",

@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="app-header">
-    <div><span class="eyebrow">BOARDGAMEGEEK TOOL</span><h1>FAQ Generator <span>v2</span></h1></div>
+    <div><span class="eyebrow">BOARDGAMEGEEK TOOL</span><h1>FAQ Generator <span>[v2.05]</span></h1></div>
     <span id="global-status" class="status neutral">Ready</span>
   </header>
 
@@ -37,9 +37,16 @@
         </div>
       </div>
 
+      <div id="expansion-card" class="card step hidden">
+        <div class="step-head"><h2>2. Choose expansions (optional)</h2></div>
+        <p class="muted">Selected expansions use the same forum category as the base game.</p>
+        <div id="expansion-results" class="result-list"></div>
+        <button id="continue-expansions" class="primary">Continue to forum</button>
+      </div>
+
       <div id="forum-card" class="card step hidden">
         <div class="step-head">
-          <h2>2. Choose a forum</h2>
+          <h2>3. Choose a forum</h2>
           <button id="edit-forum" class="ghost step-change hidden">Change</button>
         </div>
         <p id="forum-summary" class="step-summary hidden"></p>
@@ -49,12 +56,17 @@
       </div>
 
       <div id="options-card" class="card hidden">
-        <h2>3. Configure scrape</h2>
+        <h2>4. Configure scrape</h2>
         <div class="grid two">
           <label>Mode<select id="scrape-mode"><option value="full">Full scrape</option><option value="update">Update saved scrape</option></select></label>
           <label>Maximum threads<input id="max-threads" type="number" min="1" max="5000" placeholder="No limit"></label>
           <label>Posted since<input id="date-from" type="date"></label>
           <label>Subject contains<input id="subject-filter" type="search" placeholder="scoring, setup…"></label>
+        </div>
+        <div id="update-expansion-refresh" class="expansion-refresh hidden">
+          <label><input id="include-update-expansions" type="checkbox"> Include expansions when updating this saved FAQ</label>
+          <div id="update-expansion-choices" class="result-list hidden"></div>
+          <p class="muted">Selected expansions use the same forum category. Their threads will be added to this saved dataset.</p>
         </div>
         <div class="check-row">
           <label><input id="answered-only" type="checkbox"> Exclude threads with no replies</label>
@@ -86,6 +98,11 @@
       <div class="card">
         <h2>Source dataset</h2>
         <div id="faq-source" class="notice neutral">Choose a dataset from the Library or finish a scrape.</div>
+        <div id="faq-expansion-refresh" class="expansion-refresh">
+          <label><input id="include-faq-expansions" type="checkbox"> Include expansions when refreshing this FAQ</label>
+          <div id="faq-expansion-choices" class="result-list hidden"></div>
+          <p class="muted">Select which expansions to add. Their matching forum discussions will be fetched from BGG when you generate.</p>
+        </div>
         <label>Generation focus (optional)<input id="faq-focus" placeholder="Focus on end-game scoring"></label>
         <div class="grid two">
           <label>Provider<select id="provider-select"></select></label>

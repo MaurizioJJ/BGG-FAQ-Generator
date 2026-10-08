@@ -70,6 +70,14 @@ export async function getForums(gameId, token, signal) {
   }));
 }
 
+export async function getExpansions(gameId, token, signal) {
+  const document = await requestXml(`/thing?id=${encodeURIComponent(gameId)}&type=boardgame`, token, { signal });
+  const item = document.querySelector('item');
+  return [...(item?.querySelectorAll('link[type="boardgameexpansion"]') || [])]
+    .map(link => ({ id: link.getAttribute('id'), name: link.getAttribute('value') || 'Unknown expansion' }))
+    .filter(expansion => expansion.id);
+}
+
 export async function getForumThreads(forumId, token, onPage, signal) {
   const threads = [];
   for (let page = 1; ; page++) {
