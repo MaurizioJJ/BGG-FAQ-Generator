@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BGG FAQ Generator",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "Collect BGG forum discussions and create source-linked board game FAQs.",
   "minimum_chrome_version": "114",
   "permissions": ["storage", "sidePanel", "downloads"],

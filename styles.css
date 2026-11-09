@@ -23,3 +23,4 @@
 .step-summary{margin:6px 0 0;font-size:13px;font-weight:600;color:var(--text)}
 .step.collapsed{padding:10px 13px}
 .step.collapsed .step-body{display:none}
+.library-snippet{margin:0 0 8px;padding:5px 8px;border-left:2px solid var(--accent);font-size:11px;color:var(--text);background:#0d1116;border-radius:0 5px 5px 0}

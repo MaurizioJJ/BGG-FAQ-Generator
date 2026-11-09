@@ -3,7 +3,7 @@ import { datasets, loadCredentials, saveCredentials, clearCredentials, exportBac
 import { PROVIDERS, DEFAULT_PROVIDER, providerInfo, DEFAULT_MODELS, modelsFor, usageCost, estimateGeneration, generationPlan, generateFaq } from './anthropic-api.js';
 import { faqMarkdown, faqHtml, importFaqMarkdown, datasetJson, datasetText, filenames } from './exports.js';
 import { datasetForExpansions } from './faq-source.js';
-import { download as saveDownload, element, formatDuration, safeDate, setChildren, uniqueCsv } from './utils.js';
+import { download as saveDownload, element, formatDuration, safeDate, searchDataset, setChildren, uniqueCsv } from './utils.js';
 
 const $ = id => document.getElementById(id);
 const LOG_LINE_LIMIT = 200;
@@ -503,13 +503,14 @@ async function runGeneration({ resume }) {
   }
 }
 
-function libraryItem(dataset) {
+function libraryItem(dataset, snippet = '') {
   const posts = dataset.threads.reduce((sum, thread) => sum + thread.posts.length, 0);
   const pending = dataset.generation?.parts?.length;
   const container = element('article', { className: 'library-item' },
     element('h3', { text: `${dataset.game.name} — ${dataset.forum.title}` }),
     element('p', { text: `${dataset.threads.length} threads · ${posts} posts · ${new Date(dataset.updatedAt).toLocaleString()} · ${dataset.scrape.status}` +
-      (dataset.faq?.text ? ' · has FAQ' : '') + (pending ? ` · ${pending} unfinished FAQ part(s)` : '') })
+      (dataset.faq?.text ? ' · has FAQ' : '') + (pending ? ` · ${pending} unfinished FAQ part(s)` : '') }),
+    snippet && element('blockquote', { className: 'library-snippet', text: snippet })
   );
   const actions = element('div', { className: 'button-row' });
   const use = element('button', { className: 'primary', text: dataset.faq?.text ? 'Open FAQ' : 'Generate FAQ' });
@@ -543,7 +544,11 @@ function loadDatasetForUpdate(dataset) {
 
 async function renderLibrary() {
   const all = (await datasets.all()).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  setChildren($('library-list'), ...(all.length ? all.map(libraryItem) : [element('p', { className: 'muted', text: 'No saved datasets.' })]));
+  if (!all.length) return setChildren($('library-list'), element('p', { className: 'muted', text: 'No saved datasets.' }));
+  const query = $('library-search').value.trim();
+  const hits = all.map(dataset => [dataset, searchDataset(dataset, query)]).filter(([, hit]) => hit);
+  setChildren($('library-list'), ...(hits.length ? hits.map(([dataset, hit]) => libraryItem(dataset, hit.snippet))
+    : [element('p', { className: 'muted', text: `No saved dataset matches "${query}".` })]));
 }
 
 async function readFile(input) { const file = input.files?.[0]; if (!file) return null; const text = await file.text(); input.value = ''; return text; }
@@ -590,6 +595,7 @@ function bindEvents() {
   $('download-html').addEventListener('click', () => download(faqHtml(state.activeDataset), filenames(state.activeDataset).html, 'text/html'));
   $('faq-import').addEventListener('change', async event => { try { const text = await readFile(event.target); if (!text) return; const dataset = importFaqMarkdown(text); await datasets.put(dataset); state.activeDataset = dataset; renderFaqSource(); await renderLibrary(); toast('FAQ and its source dataset were restored.'); } catch (error) { toast(errorMessage(error)); } });
   $('refresh-library').addEventListener('click', renderLibrary);
+  $('library-search').addEventListener('input', renderLibrary);
   $('export-library').addEventListener('click', async () => { const backup = await exportBackup(); download(JSON.stringify(backup, null, 2), `bgg-faq-backup-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); });
   $('import-library').addEventListener('change', async event => { try { const text = await readFile(event.target); if (!text) return; const count = await importBackup(JSON.parse(text)); await renderLibrary(); toast(`Restored ${count} dataset(s).`); } catch (error) { toast(errorMessage(error)); } });
   $('save-settings').addEventListener('click', async () => { await saveCredentials({ bggToken: $('bgg-token').value.trim(), anthropicKey: $('anthropic-key').value.trim(), openaiKey: $('openai-key').value.trim(), geminiKey: $('gemini-key').value.trim(), remember: $('remember-credentials').checked, rememberAiKeys: $('remember-ai-keys').checked }); toast('Credentials saved.'); });

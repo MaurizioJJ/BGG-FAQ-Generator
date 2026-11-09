@@ -58,3 +58,16 @@ export function element(tag, options = {}, ...children) {
   children.filter(Boolean).forEach(child => node.append(child));
   return node;
 }
+
+// Every whitespace-separated term must appear in the game, forum, expansion, thread subjects or FAQ text.
+// Returns null on no match, otherwise the first FAQ line holding a term (or '' when only metadata matched).
+export function searchDataset(dataset, query) {
+  const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return { snippet: '' };
+  const faq = dataset.faq?.text || '';
+  const haystack = [dataset.game?.name, dataset.forum?.title, ...(dataset.expansions || []).map(item => item.name),
+    ...(dataset.threads || []).map(thread => thread.subject), faq].join('\n').toLowerCase();
+  if (!terms.every(term => haystack.includes(term))) return null;
+  const line = faq.split('\n').find(text => terms.some(term => text.toLowerCase().includes(term))) || '';
+  return { snippet: line.trim().slice(0, 200) };
+}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.0.6 — 2026-11-09
+
+- Added a search box to the Library. Every word must appear in the game, forum, expansion, thread subjects, or FAQ text; matching datasets show the first FAQ line that contains a search word.
+
 ## 2.0.5 — 2026-10-07
 
 - Added the expansion toggle and picker to the saved-scrape update flow, where it is visible while updating an existing dataset. The header now shows the matching compact version, v2.05.

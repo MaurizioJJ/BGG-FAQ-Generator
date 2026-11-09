@@ -9,7 +9,7 @@ BGG FAQ Generator is an independent, non-commercial utility. It is not affiliate
 - Search games and browse forums through the BGG XML API v2.
 - Preview and filter a scrape by date, subject, reply count, author, and maximum size.
 - Run full or incremental scrapes with cancellation, per-thread checkpoints, and a pinned progress summary with an optional detail log.
-- Keep complete reusable datasets in a local scrape library.
+- Keep complete reusable datasets in a local scrape library, searchable by game, thread subject, or FAQ text.
 - Generate FAQs that retain BGG thread/post links and distinguish conflicts or unresolved answers.
 - Estimate model requests, token volume, and per-model cost before generation, and see the actual cost afterwards.
 - Resume an interrupted FAQ generation from the parts already paid for.

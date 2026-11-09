@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildChunks, estimateGeneration, generationPlan, usageCost, generateFaq, serverRetryDelayMs, quotaProblem, MODELS, DEFAULT_MODEL, DEFAULT_MODELS, modelsFor } from '../src/anthropic-api.js';
 import { faqMarkdown, importFaqMarkdown, datasetText, filenames } from '../src/exports.js';
-import { approximateTokens, escapeHtml, slug, uniqueCsv } from '../src/utils.js';
+import { approximateTokens, escapeHtml, searchDataset, slug, uniqueCsv } from '../src/utils.js';
 import { datasetForExpansions } from '../src/faq-source.js';
 
 const dataset = {
@@ -346,4 +346,12 @@ test('AI keys survive a Chrome restart only when the owner opts in', async () =>
     await clearCredentials();
     assert.deepEqual(local, {});
   } finally { globalThis.chrome = originalChrome; }
+});
+
+test('library search matches metadata and FAQ text and returns a FAQ snippet', () => {
+  assert.deepEqual(searchDataset(dataset, ''), { snippet: '' });
+  assert.deepEqual(searchDataset(dataset, 'test rules'), { snippet: '' });
+  assert.equal(searchDataset(dataset, 'TWO points').snippet, '**A:** Two points. [Source](https://boardgamegeek.com/thread/3#4)');
+  assert.equal(searchDataset(dataset, 'scoring').snippet, '## Scoring');
+  assert.equal(searchDataset(dataset, 'scoring dragons'), null);
 });
